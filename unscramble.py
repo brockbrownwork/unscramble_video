@@ -69,5 +69,7 @@ def display_frames(frames):
     cv2.destroyAllWindows()
 
 # Call the function to display the frames
+print(frames[0][0][0]) # this will display the values of the top-left pixel
+input("... ")
 display_frames(frames)
 
