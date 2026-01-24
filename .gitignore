@@ -1,4 +1,3 @@
-*.ipynb
 *.pyc
 *.npy
 *.gif
@@ -19,3 +18,14 @@ heatmap_video.py
 .gitignore
 videos/
 *.mkv
+*.ipynb
+analyze_video_ffmpeg.ipynb
+image_metrics.ipynb
+tv_class.ipynb
+unscramble.ipynb
+unscramble 2.ipynb
+unscramble 3 (SOMs).ipynb
+unscramble 4.ipynb
+unscramble_2.ipynb
+unscramble_5
+analyze_video.ipynb
