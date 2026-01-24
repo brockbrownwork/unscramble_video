@@ -1,1 +1,8 @@
+opencv-python
+numpy
+tqdm
+umap-learn
+matplotlib
+Pillow
+ipython
 quadrilateral-fitter
