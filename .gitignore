@@ -18,3 +18,4 @@ requirements.txt
 heatmap_video.py
 .gitignore
 videos/
+*.mkv
