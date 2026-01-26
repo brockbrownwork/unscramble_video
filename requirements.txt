@@ -6,3 +6,5 @@ matplotlib
 Pillow
 ipython
 quadrilateral-fitter
+fastdtw
+scipy
