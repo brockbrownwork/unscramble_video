@@ -6,7 +6,12 @@
 # This experiment uses DTW as the distance metric instead of Euclidean distance.
 # DTW can capture temporal relationships between pixel color sequences, accounting
 # for time-shifts that occur when edges/objects move across adjacent pixels.
+#
+# Usage:
+#   python unscramble_dtw.py --frames 200 --tvs 500 --stride 60 --start 0 --neighbors 50
+#   python unscramble_dtw.py -f 100 -t 300 -s 30
 
+import argparse
 import os
 import random
 import time
@@ -17,20 +22,27 @@ from tqdm import tqdm
 import umap
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw
-from IPython.display import Image as DisplayImage
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 
 
-# Parameters
-number_of_frames = 200  # Sequential frames for proper DTW temporal analysis
-number_of_tvs = 500  # Small number to make O(n^2) feasible
-n_neighbors = 50
-start_frame = 0  # Starting frame for sequential extraction
-stride = 60  # One frame per second (video is 60 FPS)
-
-
-np.random.seed(1)
+def parse_args():
+    parser = argparse.ArgumentParser(description='Unscramble video using DTW + UMAP')
+    parser.add_argument('-f', '--frames', type=int, default=200,
+                        help='Number of frames to extract (default: 200)')
+    parser.add_argument('-t', '--tvs', type=int, default=500,
+                        help='Number of TVs/pixels to sample (default: 500)')
+    parser.add_argument('-s', '--stride', type=int, default=60,
+                        help='Frame skip interval (default: 60 for 1 fps at 60fps video)')
+    parser.add_argument('--start', type=int, default=0,
+                        help='Starting frame number (default: 0)')
+    parser.add_argument('-n', '--neighbors', type=int, default=50,
+                        help='UMAP n_neighbors parameter (default: 50)')
+    parser.add_argument('-v', '--video', type=str, default='cab_ride_trimmed.mkv',
+                        help='Input video file (default: cab_ride_trimmed.mkv)')
+    parser.add_argument('--seed', type=int, default=1,
+                        help='Random seed (default: 1)')
+    return parser.parse_args()
 
 
 def sequential_frames_from_video(video_path, num_frames=200, start=0, stride=1):
@@ -84,7 +96,6 @@ def dtw_distance(series1, series2):
     Each series is flattened (R,G,B,R,G,B,...), so we reshape back to (n_frames, 3)
     and compute DTW on the color trajectories.
     """
-    # Reshape from flat to (n_frames, 3) for RGB
     s1 = series1.reshape(-1, 3)
     s2 = series2.reshape(-1, 3)
 
@@ -97,63 +108,15 @@ def dtw_distance_grayscale(series1, series2):
     Compute DTW distance using grayscale intensity instead of RGB.
     This is faster and may work just as well for detecting temporal patterns.
     """
-    # Reshape from flat to (n_frames, 3) for RGB
     s1 = series1.reshape(-1, 3)
     s2 = series2.reshape(-1, 3)
 
-    # Convert to grayscale (simple average)
     gray1 = s1.mean(axis=1)
     gray2 = s2.mean(axis=1)
 
     distance, _ = fastdtw(gray1, gray2)
     return distance
 
-
-# Extract sequential frames from the video
-print("Step 1: Loading sequential video frames...")
-frames = sequential_frames_from_video('cab_ride_trimmed.mkv', num_frames=number_of_frames, start=start_frame, stride=stride)
-width = frames.shape[1]
-height = frames.shape[2]
-random_indices = np.random.permutation(width * height)
-
-
-# Preview frames
-def display_random_frames():
-    display_frames = frames[:5]
-
-    fig, axs = plt.subplots(1, len(display_frames), figsize=(20, 5))
-
-    for ax, frame in zip(axs, display_frames):
-        ax.imshow(frame)
-        ax.axis('off')
-
-    plt.tight_layout()
-    plt.show()
-
-print("Step 2: Displaying sample frames...")
-display_random_frames()
-
-
-# Build TV list
-def tv(position):
-    position = random_indices[position]
-    x_position = position % width
-    y_position = position // width
-    return frames[:, x_position, y_position]
-
-print("Step 3: Building TV color series...")
-tvs = []
-for i in tqdm(range(number_of_tvs), desc="Flattening tvs and turning them into a list"):
-    tvs.append(tv(i).flatten())
-
-tvs = np.array(tvs)
-
-del frames
-
-
-# Precompute DTW distance matrix
-print("Step 4: Precomputing DTW distance matrix...")
-print(f"Computing {number_of_tvs * (number_of_tvs - 1) // 2} pairwise distances...")
 
 def compute_distance_matrix(tvs_array):
     """
@@ -175,35 +138,13 @@ def compute_distance_matrix(tvs_array):
 
     return dist_matrix
 
-distance_matrix = compute_distance_matrix(tvs)
 
-print("Step 5: Running UMAP with precomputed distance matrix...")
-
-reducer = umap.UMAP(
-    n_neighbors=n_neighbors,
-    min_dist=0.1,
-    n_components=2,
-    metric='precomputed',
-    verbose=True
-)
-
-embedding = reducer.fit_transform(distance_matrix)
-x_coordinates, y_coordinates = embedding[:, 0], embedding[:, 1]
-
-
-# Convert TVs back to color format for visualization
 def list_to_colors(input_list):
     if len(input_list) % 3 != 0:
         raise ValueError("The length of the list must be a multiple of 3.")
     return [tuple(input_list[i:i + 3]) for i in range(0, len(input_list), 3)]
 
-print("Step 6: Converting color data for visualization...")
-relevant_tvs = []
-for tv_data in tqdm(tvs, desc="Converting lists back to colors"):
-    relevant_tvs.append(list_to_colors(tv_data))
 
-
-# Animation functions
 def normalize_list(input_list):
     min_val = min(input_list)
     max_val = max(input_list)
@@ -238,16 +179,8 @@ def create_color_animation(color_list, x_list, y_list, output_filename='animatio
     print(f"GIF created and saved as {output_filename}")
 
 
-print("Step 7: Creating animation...")
-create_color_animation(relevant_tvs, x_coordinates, y_coordinates, num_frames=10, output_filename='animation_dtw.gif')
-
-DisplayImage(filename='animation_dtw.gif')
-
-
-# Optional: Apply perspective correction
-from quadrilateral_fitter import QuadrilateralFitter
-
 def apply_perspective_correction(x_coords, y_coords):
+    from quadrilateral_fitter import QuadrilateralFitter
     points = np.array(list(zip(x_coords, y_coords)))
     fitter = QuadrilateralFitter(polygon=points)
     fitted_quadrilateral = fitter.fit()
@@ -257,9 +190,88 @@ def apply_perspective_correction(x_coords, y_coords):
 
     return x_fitted, y_fitted
 
-print("Step 8: Applying perspective correction...")
-x_transformed, y_transformed = apply_perspective_correction(x_coordinates, y_coordinates)
 
-create_color_animation(relevant_tvs, x_transformed, y_transformed, num_frames=10, output_filename='perspective_fixed_animation_dtw.gif')
+def main():
+    args = parse_args()
 
-DisplayImage(filename='perspective_fixed_animation_dtw.gif')
+    # Set random seed
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+
+    # Generate output filename with parameters and timestamp
+    timestamp = int(time.time())
+    base_filename = f"dtw_f{args.frames}_t{args.tvs}_s{args.stride}_n{args.neighbors}_{timestamp}"
+
+    print(f"=== DTW Unscramble Experiment ===")
+    print(f"Frames: {args.frames}, TVs: {args.tvs}, Stride: {args.stride}, Neighbors: {args.neighbors}")
+    print(f"Output: {base_filename}.gif")
+    print()
+
+    # Step 1: Load frames
+    print("Step 1: Loading sequential video frames...")
+    frames = sequential_frames_from_video(args.video, num_frames=args.frames, start=args.start, stride=args.stride)
+    width = frames.shape[1]
+    height = frames.shape[2]
+    random_indices = np.random.permutation(width * height)
+
+    # Step 2: Build TV list
+    print("Step 2: Building TV color series...")
+
+    def tv(position):
+        position = random_indices[position]
+        x_position = position % width
+        y_position = position // width
+        return frames[:, x_position, y_position]
+
+    tvs = []
+    for i in tqdm(range(args.tvs), desc="Flattening tvs and turning them into a list"):
+        tvs.append(tv(i).flatten())
+
+    tvs = np.array(tvs)
+    del frames
+
+    # Step 3: Compute DTW distance matrix
+    print("Step 3: Precomputing DTW distance matrix...")
+    print(f"Computing {args.tvs * (args.tvs - 1) // 2} pairwise distances...")
+    distance_matrix = compute_distance_matrix(tvs)
+
+    # Step 4: Run UMAP
+    print("Step 4: Running UMAP with precomputed distance matrix...")
+    reducer = umap.UMAP(
+        n_neighbors=args.neighbors,
+        min_dist=0.1,
+        n_components=2,
+        metric='precomputed',
+        verbose=True
+    )
+
+    embedding = reducer.fit_transform(distance_matrix)
+    x_coordinates, y_coordinates = embedding[:, 0], embedding[:, 1]
+
+    # Step 5: Convert TVs to colors
+    print("Step 5: Converting color data for visualization...")
+    relevant_tvs = []
+    for tv_data in tqdm(tvs, desc="Converting lists back to colors"):
+        relevant_tvs.append(list_to_colors(tv_data))
+
+    # Step 6: Create animation
+    print("Step 6: Creating animation...")
+    output_gif = f"{base_filename}.gif"
+    create_color_animation(relevant_tvs, x_coordinates, y_coordinates, num_frames=10, output_filename=output_gif)
+
+    # Step 7: Apply perspective correction
+    print("Step 7: Applying perspective correction...")
+    x_transformed, y_transformed = apply_perspective_correction(x_coordinates, y_coordinates)
+
+    output_gif_corrected = f"{base_filename}_corrected.gif"
+    create_color_animation(relevant_tvs, x_transformed, y_transformed, num_frames=10, output_filename=output_gif_corrected)
+
+    print()
+    print(f"=== Done! ===")
+    print(f"Output files:")
+    print(f"  {output_gif}")
+    print(f"  {output_gif_corrected}")
+
+
+if __name__ == '__main__':
+    main()

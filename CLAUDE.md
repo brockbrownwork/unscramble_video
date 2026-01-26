@@ -11,7 +11,7 @@ The thought was based on neuroscience originally. There was an experiment where 
 ## Tech Stack
 
 - **Language:** Python
-- **Core Libraries:** opencv-python, numpy, umap-learn, matplotlib, Pillow, tqdm
+- **Core Libraries:** opencv-python, numpy, umap-learn, matplotlib, Pillow, tqdm, fastdtw, scipy
 - **External Tools:** ffmpeg (via subprocess)
 - **Development:** Jupyter Notebooks for experimentation
 
@@ -19,7 +19,8 @@ The thought was based on neuroscience originally. There was an experiment where 
 
 ```
 unscramble_video/
-├── unscramble.py          # Main production script
+├── unscramble.py          # Main script (Euclidean distance)
+├── unscramble_dtw.py      # DTW experiment (Dynamic Time Warping distance)
 ├── videos/
 │   └── stitch.py          # Video concatenation utility
 ├── *.ipynb                # Experimental notebooks
@@ -34,8 +35,11 @@ unscramble_video/
 # Install dependencies
 pip install -r requirements.txt
 
-# Run main script
+# Run main script (Euclidean distance)
 python unscramble.py
+
+# Run DTW experiment (slower but captures temporal shifts)
+python unscramble_dtw.py
 
 # Stitch videos
 cd videos && python stitch.py
@@ -45,6 +49,8 @@ cd videos && python stitch.py
 
 - **TVs**: Pixel color time-series (each pixel position across all frames)
 - **Pipeline**: Video → frames → TVs → UMAP embedding → RGB visualization → animation
+- **DTW (Dynamic Time Warping)**: Distance metric that accounts for time-shifts between sequences, useful when edges/objects move across adjacent pixels
+- **Stride**: Frame skip interval for capturing longer-term temporal patterns without increasing computation
 
 ## Coding Conventions
 
