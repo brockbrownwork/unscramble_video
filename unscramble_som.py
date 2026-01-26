@@ -10,6 +10,7 @@
 # Usage:
 #   python unscramble_som.py --frames 200 --tvs 500 --stride 60 --grid 50
 #   python unscramble_som.py -f 100 -t 1000 -s 30 -g 30 --iterations 10000
+#   python unscramble_som.py --dtw --landmarks 50  # Use DTW-based features
 
 import argparse
 import random
@@ -20,6 +21,7 @@ import numpy as np
 from tqdm import tqdm
 from minisom import MiniSom
 from PIL import Image, ImageDraw
+from fastdtw import fastdtw
 
 
 def parse_args():
@@ -46,6 +48,12 @@ def parse_args():
                         help='Random seed (default: 1)')
     parser.add_argument('--jitter', type=float, default=0.3,
                         help='Jitter amount for TVs mapped to same neuron (default: 0.3)')
+    parser.add_argument('--dtw', action='store_true',
+                        help='Use DTW-based landmark features instead of raw color sequences')
+    parser.add_argument('--landmarks', type=int, default=50,
+                        help='Number of landmark TVs for DTW features (default: 50)')
+    parser.add_argument('--uniform-grid', action='store_true',
+                        help='Place TVs on uniform grid (assign each TV to best available cell)')
     return parser.parse_args()
 
 
@@ -95,6 +103,95 @@ def normalize_list(input_list):
     return [(x - min_val) / (max_val - min_val) for x in input_list]
 
 
+def dtw_distance_grayscale(series1, series2):
+    """
+    Compute DTW distance using grayscale intensity instead of RGB.
+    """
+    s1 = series1.reshape(-1, 3)
+    s2 = series2.reshape(-1, 3)
+
+    gray1 = s1.mean(axis=1)
+    gray2 = s2.mean(axis=1)
+
+    distance, _ = fastdtw(gray1, gray2)
+    return distance
+
+
+def compute_dtw_landmark_features(tvs_array, num_landmarks):
+    """
+    Compute DTW distances from each TV to a set of landmark TVs.
+    Returns a feature matrix where each row is the DTW distance profile to landmarks.
+    """
+    n = len(tvs_array)
+
+    # Select random landmark indices
+    landmark_indices = np.random.choice(n, size=num_landmarks, replace=False)
+    landmarks = tvs_array[landmark_indices]
+
+    print(f"Computing DTW distances to {num_landmarks} landmarks...")
+    feature_matrix = np.zeros((n, num_landmarks))
+
+    for i in tqdm(range(n), desc="Computing DTW landmark features"):
+        for j, landmark in enumerate(landmarks):
+            feature_matrix[i, j] = dtw_distance_grayscale(tvs_array[i], landmark)
+
+    return feature_matrix
+
+
+def assign_to_uniform_grid(som, features_normalized, grid_size):
+    """
+    Assign each TV to a unique grid cell, creating an evenly-spaced layout.
+    Uses a greedy assignment: for each cell, find the unassigned TV with
+    the smallest distance to that cell's weight vector.
+    """
+    from scipy.spatial.distance import cdist
+
+    n_tvs = len(features_normalized)
+    n_cells = grid_size * grid_size
+
+    if n_tvs > n_cells:
+        print(f"Warning: More TVs ({n_tvs}) than grid cells ({n_cells}). Some TVs will be excluded.")
+
+    # Get all neuron weight vectors
+    weights = som.get_weights().reshape(-1, features_normalized.shape[1])
+
+    # Compute distance from each TV to each neuron
+    distances = cdist(features_normalized, weights, metric='euclidean')
+
+    # Greedy assignment: iterate through TVs sorted by their min distance to any cell
+    assigned_cells = set()
+    tv_assignments = {}  # tv_index -> (grid_x, grid_y)
+
+    # For each TV, find its best unassigned cell
+    tv_order = list(range(n_tvs))
+    # Sort by how "desperate" each TV is (min distance to any cell)
+    tv_order.sort(key=lambda i: distances[i].min())
+
+    for tv_idx in tqdm(tv_order, desc="Assigning TVs to grid"):
+        # Find best unassigned cell for this TV
+        sorted_cells = np.argsort(distances[tv_idx])
+        for cell_idx in sorted_cells:
+            if cell_idx not in assigned_cells:
+                assigned_cells.add(cell_idx)
+                grid_x = cell_idx % grid_size
+                grid_y = cell_idx // grid_size
+                tv_assignments[tv_idx] = (grid_x, grid_y)
+                break
+
+    # Convert to coordinate lists (in original TV order)
+    x_coords = []
+    y_coords = []
+    valid_tv_indices = []
+
+    for i in range(n_tvs):
+        if i in tv_assignments:
+            x_coords.append(tv_assignments[i][0])
+            y_coords.append(tv_assignments[i][1])
+            valid_tv_indices.append(i)
+
+    return np.array(x_coords), np.array(y_coords), valid_tv_indices
+
+
 def create_color_animation(color_list, x_list, y_list, output_filename='animation.gif', num_frames=None):
     img_size = (500, 500)
     point_radius = 3
@@ -134,12 +231,15 @@ def main():
 
     # Generate output filename with parameters and timestamp
     timestamp = int(time.time())
-    base_filename = f"som_f{args.frames}_t{args.tvs}_s{args.stride}_g{args.grid}_i{args.iterations}_{timestamp}"
+    dtw_suffix = f"_dtw{args.landmarks}" if args.dtw else ""
+    base_filename = f"som_f{args.frames}_t{args.tvs}_s{args.stride}_g{args.grid}_i{args.iterations}{dtw_suffix}_{timestamp}"
 
     print(f"=== SOM Unscramble Experiment ===")
     print(f"Frames: {args.frames}, TVs: {args.tvs}, Stride: {args.stride}")
     print(f"Grid: {args.grid}x{args.grid}, Iterations: {args.iterations}")
     print(f"Sigma: {sigma}, Learning rate: {args.learning_rate}")
+    if args.dtw:
+        print(f"DTW mode: {args.landmarks} landmarks")
     print(f"Output: {base_filename}.gif")
     print()
 
@@ -165,18 +265,25 @@ def main():
 
     tvs = np.array(tvs)
 
-    # Normalize TVs for SOM (important for training stability)
-    tvs_normalized = (tvs - tvs.min()) / (tvs.max() - tvs.min())
-
     del frames
 
-    # Step 3: Train SOM
-    print("Step 3: Training Self-Organizing Map...")
-    print(f"Input dimension: {tvs_normalized.shape[1]}")
+    # Step 3: Prepare features (either raw or DTW-based)
+    if args.dtw:
+        print("Step 3: Computing DTW landmark features...")
+        features = compute_dtw_landmark_features(tvs, args.landmarks)
+        # Normalize DTW features
+        features_normalized = (features - features.min()) / (features.max() - features.min())
+    else:
+        # Normalize raw TVs for SOM (important for training stability)
+        features_normalized = (tvs - tvs.min()) / (tvs.max() - tvs.min())
+
+    # Step 4: Train SOM
+    print("Step 4: Training Self-Organizing Map...")
+    print(f"Input dimension: {features_normalized.shape[1]}")
 
     som = MiniSom(
         args.grid, args.grid,
-        tvs_normalized.shape[1],
+        features_normalized.shape[1],
         sigma=sigma,
         learning_rate=args.learning_rate,
         neighborhood_function='gaussian',
@@ -184,45 +291,54 @@ def main():
     )
 
     # Initialize weights
-    som.random_weights_init(tvs_normalized)
+    som.random_weights_init(features_normalized)
 
     # Train with progress bar
     for i in tqdm(range(args.iterations), desc="Training SOM"):
-        idx = np.random.randint(len(tvs_normalized))
-        som.update(tvs_normalized[idx], som.winner(tvs_normalized[idx]), i, args.iterations)
+        idx = np.random.randint(len(features_normalized))
+        som.update(features_normalized[idx], som.winner(features_normalized[idx]), i, args.iterations)
 
-    # Step 4: Map TVs to SOM positions
-    print("Step 4: Mapping TVs to SOM grid positions...")
-    x_coordinates = []
-    y_coordinates = []
+    # Step 5: Map TVs to SOM positions
+    print("Step 5: Mapping TVs to SOM grid positions...")
 
-    for i in tqdm(range(len(tvs_normalized)), desc="Finding BMUs"):
-        winner = som.winner(tvs_normalized[i])
-        # Add jitter to avoid all TVs at same neuron overlapping
-        jitter_x = (np.random.random() - 0.5) * args.jitter
-        jitter_y = (np.random.random() - 0.5) * args.jitter
-        x_coordinates.append(winner[0] + jitter_x)
-        y_coordinates.append(winner[1] + jitter_y)
+    if args.uniform_grid:
+        # Assign each TV to a unique grid cell for even spacing
+        x_coordinates, y_coordinates, valid_indices = assign_to_uniform_grid(
+            som, features_normalized, args.grid
+        )
+        # Filter TVs to only those that got assigned
+        tvs = tvs[valid_indices]
+    else:
+        # Original behavior: place at BMU with jitter
+        x_coordinates = []
+        y_coordinates = []
 
-    x_coordinates = np.array(x_coordinates)
-    y_coordinates = np.array(y_coordinates)
+        for i in tqdm(range(len(features_normalized)), desc="Finding BMUs"):
+            winner = som.winner(features_normalized[i])
+            jitter_x = (np.random.random() - 0.5) * args.jitter
+            jitter_y = (np.random.random() - 0.5) * args.jitter
+            x_coordinates.append(winner[0] + jitter_x)
+            y_coordinates.append(winner[1] + jitter_y)
 
-    # Step 5: Convert TVs to colors
-    print("Step 5: Converting color data for visualization...")
+        x_coordinates = np.array(x_coordinates)
+        y_coordinates = np.array(y_coordinates)
+
+    # Step 6: Convert TVs to colors
+    print("Step 6: Converting color data for visualization...")
     relevant_tvs = []
     for tv_data in tqdm(tvs, desc="Converting lists back to colors"):
         relevant_tvs.append(list_to_colors(tv_data.astype(int)))
 
-    # Step 6: Create animation
-    print("Step 6: Creating animation...")
+    # Step 7: Create animation
+    print("Step 7: Creating animation...")
     output_gif = f"{base_filename}.gif"
     create_color_animation(relevant_tvs, x_coordinates, y_coordinates, num_frames=10, output_filename=output_gif)
 
-    # Step 7: Show some stats
+    # Step 8: Show some stats
     print()
     print(f"=== Done! ===")
     print(f"Output: {output_gif}")
-    print(f"Quantization error: {som.quantization_error(tvs_normalized):.4f}")
+    print(f"Quantization error: {som.quantization_error(features_normalized):.4f}")
 
 
 if __name__ == '__main__':

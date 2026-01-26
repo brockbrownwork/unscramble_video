@@ -64,3 +64,13 @@ cd videos && python stitch.py
 
 - Commit prefixes: `feat:`, `chore:`, `fix:`, `docs:`
 - Keep notebooks and generated media out of git (see .gitignore)
+
+## Ideas
+
+- Find nearest neighbors in 9x9 fashion, and take the 9x9 and attach it to four other 9x9s, making it 18x18, and so on so that you're dealing with chunks instead of trying to compare distance between each pixel all the time. Maybe take a step back as a refinement stage, like removing pixels randomly and filling it back in with the best fit based on the heuristic (probably DTW).
+
+- Consider that the fovea is densely packed, and so you get more information at the center of your vision than the outside. There are patterns that exist of hexagonal packing that can be infinitely densely packed at the center and grow gradually to a fixed size on the borders. Escher demonstrated this, but some finite version of that idea might not be a bad way to try to organize them.
+
+- Consider an experiment where you take a video then just randomize a few pixel positions and then figure out which ones are wrong and put them back, and figure out what number you'd have to raise that to in order to start seeing serious trouble.
+
+- Try the thing you did where you demonstrated that the Euclidean distance metric has some real tendencies to actual TV distance, except with DTW side by side to show if DTW is actually a better metric or not.
