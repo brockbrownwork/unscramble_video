@@ -23,11 +23,18 @@ from tv_wall import TVWall
 from aeon.distances import dtw_pairwise_distance, euclidean_pairwise_distance
 
 
-def get_neighbors(x, y, width, height):
-    """Get valid neighbor positions for a given (x, y) coordinate."""
+def get_neighbors(x, y, width, height, kernel_size=3):
+    """Get valid neighbor positions for a given (x, y) coordinate.
+
+    Args:
+        x, y: Center position
+        width, height: Grid dimensions
+        kernel_size: Odd integer for kernel width (3 = 3x3, 5 = 5x5, etc.)
+    """
     neighbors = []
-    for dx in [-1, 0, 1]:
-        for dy in [-1, 0, 1]:
+    radius = kernel_size // 2
+    for dx in range(-radius, radius + 1):
+        for dy in range(-radius, radius + 1):
             if dx == 0 and dy == 0:
                 continue
             nx, ny = x + dx, y + dy
@@ -36,10 +43,10 @@ def get_neighbors(x, y, width, height):
     return neighbors
 
 
-def compute_neighbor_dissonance_at_position(wall, x, y, all_series, window=0.1, metric='dtw'):
+def compute_neighbor_dissonance_at_position(wall, x, y, all_series, window=0.1, metric='dtw', kernel_size=3):
     """Compute neighbor dissonance for a single position using specified metric."""
     height, width = wall.height, wall.width
-    neighbors = get_neighbors(x, y, width, height)
+    neighbors = get_neighbors(x, y, width, height, kernel_size)
 
     if not neighbors:
         return 0.0
@@ -78,6 +85,7 @@ class NeighborDissonanceGUI:
         self.display_scale = 1
         self.current_frame = 0
         self.selected_position = None
+        self.current_kernel_size = 3
 
         self.setup_ui()
 
@@ -115,6 +123,13 @@ class NeighborDissonanceGUI:
         ttk.Label(param_frame, text="DTW Window (0-1):").pack(anchor=tk.W)
         self.window_var = tk.StringVar(value="0.1")
         ttk.Entry(param_frame, textvariable=self.window_var, width=10).pack(anchor=tk.W)
+
+        ttk.Label(param_frame, text="Kernel Size (odd):").pack(anchor=tk.W)
+        self.kernel_var = tk.StringVar(value="3")
+        kernel_frame = ttk.Frame(param_frame)
+        kernel_frame.pack(anchor=tk.W)
+        ttk.Entry(kernel_frame, textvariable=self.kernel_var, width=5).pack(side=tk.LEFT)
+        ttk.Label(kernel_frame, text=" (3=8 neighbors, 5=24, 7=48)", font=("TkDefaultFont", 8)).pack(side=tk.LEFT)
 
         # Swap controls
         swap_frame = ttk.LabelFrame(left_panel, text="Swap Controls", padding="5")
@@ -340,6 +355,14 @@ class NeighborDissonanceGUI:
             window = float(self.window_var.get())
             num_compare = int(self.num_compare_var.get())
 
+            # Parse and validate kernel size (must be odd)
+            kernel_size = int(self.kernel_var.get())
+            if kernel_size < 3:
+                kernel_size = 3
+            if kernel_size % 2 == 0:
+                kernel_size += 1  # Make it odd
+            self.current_kernel_size = kernel_size
+
             # Build series array with current swap configuration
             current_series = np.zeros_like(self.all_series)
             for y in range(height):
@@ -371,10 +394,10 @@ class NeighborDissonanceGUI:
             for i, (x, y) in enumerate(positions_to_compute):
                 # Compute both metrics
                 dissonance_dtw[y, x] = compute_neighbor_dissonance_at_position(
-                    self.wall, x, y, current_series, window, metric='dtw'
+                    self.wall, x, y, current_series, window, metric='dtw', kernel_size=kernel_size
                 )
                 dissonance_euc[y, x] = compute_neighbor_dissonance_at_position(
-                    self.wall, x, y, current_series, window, metric='euclidean'
+                    self.wall, x, y, current_series, window, metric='euclidean', kernel_size=kernel_size
                 )
 
                 # Update progress
@@ -407,10 +430,14 @@ class NeighborDissonanceGUI:
 
         self.results_text.delete(1.0, tk.END)
 
+        # Calculate number of neighbors for current kernel
+        n_neighbors = self.current_kernel_size ** 2 - 1
+
         results = []
         results.append("=" * 35)
         results.append("  DTW vs EUCLIDEAN COMPARISON")
         results.append("=" * 35)
+        results.append(f"Kernel: {self.current_kernel_size}x{self.current_kernel_size} ({n_neighbors} neighbors)")
         results.append(f"Swapped: {len(self.swapped_positions)}")
         results.append(f"Comparison: {len(self.comparison_positions)}")
         results.append("")
