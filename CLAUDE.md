@@ -54,6 +54,42 @@ cd videos && python stitch.py
 - **DTW (Dynamic Time Warping)**: Distance metric that accounts for time-shifts between sequences, useful when edges/objects move across adjacent pixels
 - **Stride**: Frame skip interval for capturing longer-term temporal patterns without increasing computation
 
+## DTW Pairwise Distance
+
+Use `aeon.distances.dtw_pairwise_distance` to compute DTW distances between TV color series:
+
+```python
+from aeon.distances import dtw_pairwise_distance
+import numpy as np
+
+# Get color series for multiple TVs - shape: (n_tvs, n_channels, n_frames)
+# Each TV has 3 channels (RGB) and n_frames timepoints
+tv_series = np.array([
+    wall.get_tv_color_series(x1, y1).T,  # shape: (3, n_frames)
+    wall.get_tv_color_series(x2, y2).T,
+    wall.get_tv_color_series(x3, y3).T,
+])
+
+# Compute pairwise DTW distance matrix - shape: (n_tvs, n_tvs)
+distances = dtw_pairwise_distance(tv_series)
+
+# With Sakoe-Chiba band constraint (faster, limits warping)
+distances = dtw_pairwise_distance(tv_series, window=0.1)
+
+# Parallel computation
+distances = dtw_pairwise_distance(tv_series, n_jobs=-1)
+
+# Distance between one TV and all others
+single_tv = wall.get_tv_color_series(x, y).T  # shape: (3, n_frames)
+distances_to_one = dtw_pairwise_distance(tv_series, single_tv)  # shape: (n_tvs, 1)
+```
+
+**Parameters:**
+- `X`: Array of shape `(n_cases, n_channels, n_timepoints)` for multivariate series
+- `y`: Optional second collection to compare against
+- `window`: Sakoe-Chiba band as fraction of series length (0.0-1.0), limits warping
+- `n_jobs`: Parallel jobs (-1 for all cores)
+
 ## TVWall Class
 
 The `TVWall` class (`tv_wall.py`) is the core abstraction for simulating the TV wall. It loads a video and tracks which TV is at which position via a swap mapping.
