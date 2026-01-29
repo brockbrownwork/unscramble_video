@@ -140,6 +140,16 @@ class NeighborDissonanceGUI:
         ttk.Entry(swap_frame, textvariable=self.num_swaps_var, width=10).pack(anchor=tk.W)
 
         ttk.Button(swap_frame, text="Random Swap", command=self.random_swap).pack(fill=tk.X, pady=2)
+
+        # Short swap controls
+        short_swap_frame = ttk.Frame(swap_frame)
+        short_swap_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(short_swap_frame, text="Max dist:").pack(side=tk.LEFT)
+        self.max_swap_dist_var = tk.StringVar(value="5")
+        ttk.Entry(short_swap_frame, textvariable=self.max_swap_dist_var, width=5).pack(side=tk.LEFT, padx=2)
+        ttk.Label(short_swap_frame, text="px").pack(side=tk.LEFT)
+
+        ttk.Button(swap_frame, text="Short Swap", command=self.short_swap).pack(fill=tk.X, pady=2)
         ttk.Button(swap_frame, text="Reset All Swaps", command=self.reset_swaps).pack(fill=tk.X, pady=2)
         ttk.Button(swap_frame, text="Save Swapped Video...", command=self.save_swapped_video).pack(fill=tk.X, pady=2)
 
@@ -306,6 +316,77 @@ class NeighborDissonanceGUI:
             self.swapped_positions.add(pos1)
             self.swapped_positions.add(pos2)
             self.swap_pairs.append((pos1, pos2))
+
+        self.update_swap_info()
+        self.update_display()
+
+    def short_swap(self):
+        """Perform random swaps within a maximum distance."""
+        if self.wall is None:
+            messagebox.showwarning("Warning", "Load a video first")
+            return
+
+        try:
+            num_swaps = int(self.num_swaps_var.get())
+            max_dist = int(self.max_swap_dist_var.get())
+        except ValueError:
+            messagebox.showerror("Error", "Invalid number")
+            return
+
+        if max_dist < 1:
+            messagebox.showerror("Error", "Max distance must be at least 1")
+            return
+
+        # For each swap, pick a random position and find a partner within max_dist
+        swaps_made = 0
+        attempts = 0
+        max_attempts = num_swaps * 100  # Prevent infinite loop
+
+        used_positions = set(self.swapped_positions)  # Don't reuse already swapped positions
+
+        while swaps_made < num_swaps and attempts < max_attempts:
+            attempts += 1
+
+            # Pick a random position
+            x1 = np.random.randint(0, self.wall.width)
+            y1 = np.random.randint(0, self.wall.height)
+
+            if (x1, y1) in used_positions:
+                continue
+
+            # Find valid positions within max_dist
+            candidates = []
+            for dx in range(-max_dist, max_dist + 1):
+                for dy in range(-max_dist, max_dist + 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    x2, y2 = x1 + dx, y1 + dy
+                    # Check bounds
+                    if 0 <= x2 < self.wall.width and 0 <= y2 < self.wall.height:
+                        # Check distance (Euclidean)
+                        dist = np.sqrt(dx**2 + dy**2)
+                        if dist <= max_dist and (x2, y2) not in used_positions:
+                            candidates.append((x2, y2))
+
+            if not candidates:
+                continue
+
+            # Pick a random candidate
+            x2, y2 = candidates[np.random.randint(len(candidates))]
+
+            # Perform the swap
+            pos1 = (x1, y1)
+            pos2 = (x2, y2)
+            self.wall.swap_positions(pos1, pos2)
+            self.swapped_positions.add(pos1)
+            self.swapped_positions.add(pos2)
+            self.swap_pairs.append((pos1, pos2))
+            used_positions.add(pos1)
+            used_positions.add(pos2)
+            swaps_made += 1
+
+        if swaps_made < num_swaps:
+            messagebox.showinfo("Info", f"Only made {swaps_made}/{num_swaps} swaps (not enough valid positions)")
 
         self.update_swap_info()
         self.update_display()
