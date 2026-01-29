@@ -26,8 +26,8 @@ class TVWall:
     Attributes:
         width (int): Width of the video in pixels (number of TV columns).
         height (int): Height of the video in pixels (number of TV rows).
-        swaps (dict): Maps original TV positions to their current positions.
-                      Key: (orig_x, orig_y) -> Value: (new_x, new_y)
+        _perm_y (np.ndarray): Index array mapping current positions to original y coords.
+        _perm_x (np.ndarray): Index array mapping current positions to original x coords.
     """
 
     def __init__(self, video_path, num_frames=None, start_frame=0, stride=1):
@@ -43,9 +43,9 @@ class TVWall:
         self.video_path = video_path
         self.start_frame = start_frame
         self.stride = stride
-        self.swaps = {}
 
         self._load_video(num_frames)
+        self._init_permutation()
 
     def _load_video(self, num_frames):
         """Load frames from the video file."""
@@ -86,6 +86,11 @@ class TVWall:
         self.height = self._frames.shape[1]
         self.width = self._frames.shape[2]
 
+    def _init_permutation(self):
+        """Initialize permutation arrays to identity mapping."""
+        # _perm_y[y, x] and _perm_x[y, x] give the original (y, x) of the TV at position (y, x)
+        self._perm_y, self._perm_x = np.mgrid[0:self.height, 0:self.width]
+
     @property
     def num_tvs(self):
         """Total number of TVs in the wall."""
@@ -102,11 +107,7 @@ class TVWall:
         Returns:
             tuple: (orig_x, orig_y) - the original position of the TV at this location.
         """
-        # Check if any TV was swapped to this position
-        for orig_pos, new_pos in self.swaps.items():
-            if new_pos == (x, y):
-                return orig_pos
-        return (x, y)
+        return (self._perm_x[y, x], self._perm_y[y, x])
 
     def get_current_position(self, orig_x, orig_y):
         """
@@ -119,17 +120,27 @@ class TVWall:
         Returns:
             tuple: (cur_x, cur_y) - the current position of this TV.
         """
-        return self.swaps.get((orig_x, orig_y), (orig_x, orig_y))
+        # Find where in the permutation arrays the original position appears
+        mask = (self._perm_x == orig_x) & (self._perm_y == orig_y)
+        positions = np.argwhere(mask)
+        if len(positions) > 0:
+            cur_y, cur_x = positions[0]
+            return (cur_x, cur_y)
+        return (orig_x, orig_y)
 
     def swap(self, orig_pos, new_pos):
         """
-        Swap a TV from its original position to a new position.
+        Place the TV originally at orig_pos into the new_pos slot.
+
+        Note: This overwrites whatever was at new_pos. For a true swap
+        of two TVs, use swap_positions() instead.
 
         Parameters:
             orig_pos (tuple): Original position (x, y) of the TV.
             new_pos (tuple): New position (x, y) where the TV should be placed.
         """
-        self.swaps[orig_pos] = new_pos
+        self._perm_x[new_pos[1], new_pos[0]] = orig_pos[0]
+        self._perm_y[new_pos[1], new_pos[0]] = orig_pos[1]
 
     def swap_positions(self, pos1, pos2):
         """
@@ -139,13 +150,12 @@ class TVWall:
             pos1 (tuple): First position (x, y).
             pos2 (tuple): Second position (x, y).
         """
-        # Find what original TVs are currently at these positions
-        orig1 = self.get_original_position(*pos1)
-        orig2 = self.get_original_position(*pos2)
+        x1, y1 = pos1
+        x2, y2 = pos2
 
-        # Swap their positions
-        self.swaps[orig1] = pos2
-        self.swaps[orig2] = pos1
+        # Swap the permutation values
+        self._perm_x[y1, x1], self._perm_x[y2, x2] = self._perm_x[y2, x2], self._perm_x[y1, x1]
+        self._perm_y[y1, x1], self._perm_y[y2, x2] = self._perm_y[y2, x2], self._perm_y[y1, x1]
 
     def scramble(self, seed=None):
         """
@@ -168,29 +178,31 @@ class TVWall:
         if seed is not None:
             np.random.seed(seed)
 
+        # Reset to identity first
+        self._init_permutation()
+
         # Clamp to total number of TVs
         num_positions = min(num_positions, self.num_tvs)
 
-        # Create list of all positions
-        all_positions = [(x, y) for y in range(self.height) for x in range(self.width)]
+        # Select random flat indices to shuffle
+        all_indices = np.arange(self.num_tvs)
+        selected_indices = np.random.choice(all_indices, size=num_positions, replace=False)
 
-        # Select random positions to shuffle
-        selected_indices = np.random.choice(len(all_positions), size=num_positions, replace=False)
-        selected_positions = [all_positions[i] for i in selected_indices]
+        # Extract the values at those positions
+        flat_perm_x = self._perm_x.ravel()
+        flat_perm_y = self._perm_y.ravel()
 
-        # Shuffle only the selected positions among themselves
-        shuffled = selected_positions.copy()
-        np.random.shuffle(shuffled)
+        selected_x = flat_perm_x[selected_indices].copy()
+        selected_y = flat_perm_y[selected_indices].copy()
 
-        # Reset and create new swaps mapping
-        self.swaps = {}
-        for orig, new in zip(selected_positions, shuffled):
-            if orig != new:
-                self.swaps[orig] = new
+        # Shuffle
+        shuffle_order = np.random.permutation(num_positions)
+        flat_perm_x[selected_indices] = selected_x[shuffle_order]
+        flat_perm_y[selected_indices] = selected_y[shuffle_order]
 
     def reset_swaps(self):
         """Reset all swaps, returning TVs to their original positions."""
-        self.swaps = {}
+        self._init_permutation()
 
     def get_tv_color_series(self, orig_x, orig_y):
         """
@@ -218,14 +230,8 @@ class TVWall:
         if timestep < 0 or timestep >= self.num_frames:
             raise ValueError(f"Timestep {timestep} out of range [0, {self.num_frames - 1}]")
 
-        # Create output image array
-        output = np.zeros((self.height, self.width, 3), dtype=np.uint8)
-
-        # Fill in pixel values based on swaps
-        for y in range(self.height):
-            for x in range(self.width):
-                orig_x, orig_y = self.get_original_position(x, y)
-                output[y, x] = self._frames[timestep, orig_y, orig_x]
+        # Use advanced indexing to remap all pixels at once
+        output = self._frames[timestep, self._perm_y, self._perm_x]
 
         return Image.fromarray(output, mode='RGB')
 
@@ -278,7 +284,13 @@ class TVWall:
 
             print(f"Saved video to {output_path}")
 
+    @property
+    def num_swapped(self):
+        """Count of TVs not in their original position."""
+        identity_y, identity_x = np.mgrid[0:self.height, 0:self.width]
+        return np.sum((self._perm_x != identity_x) | (self._perm_y != identity_y))
+
     def __repr__(self):
         return (f"TVWall(video='{self.video_path}', width={self.width}, "
                 f"height={self.height}, frames={self.num_frames}, "
-                f"swaps={len(self.swaps)})")
+                f"swapped={self.num_swapped})")

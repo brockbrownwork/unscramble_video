@@ -19,6 +19,7 @@ The thought was based on neuroscience originally. There was an experiment where 
 
 ```
 unscramble_video/
+├── tv_wall.py             # TVWall class - core abstraction for TV wall simulation
 ├── unscramble.py          # Main script (Euclidean distance)
 ├── unscramble_dtw.py      # DTW experiment (Dynamic Time Warping distance)
 ├── videos/
@@ -48,9 +49,50 @@ cd videos && python stitch.py
 ## Key Concepts
 
 - **TVs**: Pixel color time-series (each pixel position across all frames)
+- **TVWall**: Class representing the wall of TVs; handles video loading, position swapping, and frame/video export
 - **Pipeline**: Video → frames → TVs → UMAP embedding → RGB visualization → animation
 - **DTW (Dynamic Time Warping)**: Distance metric that accounts for time-shifts between sequences, useful when edges/objects move across adjacent pixels
 - **Stride**: Frame skip interval for capturing longer-term temporal patterns without increasing computation
+
+## TVWall Class
+
+The `TVWall` class (`tv_wall.py`) is the core abstraction for simulating the TV wall. It loads a video and tracks which TV is at which position via a swap mapping.
+
+**Usage:**
+```python
+from tv_wall import TVWall
+
+# Load video (optional: num_frames, start_frame, stride)
+wall = TVWall("video.mkv", num_frames=100, stride=2)
+
+# Scramble all TVs randomly
+wall.scramble(seed=42)
+
+# Or scramble a subset of positions
+wall.random_swaps(num_positions=50, seed=42)
+
+# Get color time-series for a TV at original position
+colors = wall.get_tv_color_series(x, y)  # shape: (num_frames, 3)
+
+# Get/save frames with current swap configuration
+img = wall.get_frame_image(timestep=0)
+wall.save_frame(timestep=0, output_path="frame.png")
+
+# Export video with swapped positions
+wall.save_video("scrambled.mp4", fps=30)
+
+# Reset to original positions
+wall.reset_swaps()
+```
+
+**Key Methods:**
+- `scramble(seed)` - Randomly shuffle all TV positions
+- `random_swaps(num_positions, seed)` - Shuffle a subset of positions
+- `swap(orig_pos, new_pos)` - Move a single TV to a new position
+- `swap_positions(pos1, pos2)` - Swap two TVs with each other
+- `get_tv_color_series(x, y)` - Get RGB time-series for a TV
+- `get_frame_image(timestep)` - Get PIL Image at a timestep
+- `save_video(path, fps)` - Export video via ffmpeg
 
 ## Coding Conventions
 
