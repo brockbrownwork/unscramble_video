@@ -3,6 +3,7 @@
 *.gif
 __pycache__/
 media/
+ffmpeg/
 .ipynb_checkpoints/
 scrambled_frames_subset.npy
 bucket.npy
