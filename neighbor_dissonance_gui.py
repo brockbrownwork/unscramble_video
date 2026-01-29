@@ -141,6 +141,7 @@ class NeighborDissonanceGUI:
 
         ttk.Button(swap_frame, text="Random Swap", command=self.random_swap).pack(fill=tk.X, pady=2)
         ttk.Button(swap_frame, text="Reset All Swaps", command=self.reset_swaps).pack(fill=tk.X, pady=2)
+        ttk.Button(swap_frame, text="Save Swapped Video...", command=self.save_swapped_video).pack(fill=tk.X, pady=2)
 
         ttk.Separator(swap_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=5)
 
@@ -324,6 +325,41 @@ class NeighborDissonanceGUI:
         self.update_swap_info()
         self.update_display()
         self.results_text.delete(1.0, tk.END)
+
+    def save_swapped_video(self):
+        """Save the video with current swap configuration."""
+        if self.wall is None:
+            messagebox.showwarning("Warning", "Load a video first")
+            return
+
+        if len(self.swapped_positions) == 0:
+            messagebox.showwarning("Warning", "No swaps to save")
+            return
+
+        filepath = filedialog.asksaveasfilename(
+            title="Save Swapped Video",
+            defaultextension=".mp4",
+            filetypes=[("MP4 video", "*.mp4"), ("All files", "*.*")]
+        )
+        if not filepath:
+            return
+
+        self.status_label.config(text="Saving video...")
+        self.root.update()
+
+        # Run in background thread
+        thread = threading.Thread(target=self._save_video_worker, args=(filepath,))
+        thread.start()
+
+    def _save_video_worker(self, filepath):
+        """Background worker to save video."""
+        try:
+            self.wall.save_video(filepath, fps=30)
+            self.root.after(0, lambda: self.status_label.config(text=f"Saved: {filepath}"))
+            self.root.after(0, lambda: messagebox.showinfo("Success", f"Video saved to:\n{filepath}"))
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to save video: {e}"))
+            self.root.after(0, lambda: self.status_label.config(text="Save failed"))
 
     def update_swap_info(self):
         """Update the swap info label."""
