@@ -19,6 +19,7 @@ heatmap_video.py
 .gitignore
 videos/
 *.mkv
+*.mp4
 *.ipynb
 analyze_video_ffmpeg.ipynb
 image_metrics.ipynb
