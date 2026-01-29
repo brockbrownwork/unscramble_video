@@ -107,12 +107,39 @@ wall.reset_swaps()
 - Commit prefixes: `feat:`, `chore:`, `fix:`, `docs:`
 - Keep notebooks and generated media out of git (see .gitignore)
 
+## Unscrambling Approach
+
+### Neighbor Dissonance
+
+The core metric for detecting misplaced TVs. For each position, compute the average DTW distance to its 8 neighbors using a 3x3 kernel:
+
+```
++---+---+---+
+| ↖ | ↑ | ↗ |
++---+---+---+
+| ← | X | → |   neighbor_dissonance(X) = sum(DTW(X, neighbor)) / num_neighbors
++---+---+---+
+| ↙ | ↓ | ↘ |
++---+---+---+
+```
+
+High dissonance indicates a TV that doesn't belong with its neighbors - a candidate for being swapped.
+
+### Incremental Solving Strategy
+
+1. Start with the video in correct configuration
+2. Swap 2 TVs, then solve
+3. Double the number of swapped TVs each iteration until hitting a roadblock
+4. Use neighbor dissonance to identify swap candidates
+
+The main challenge is the combinatorial explosion of permutations among swap candidates. A* search may help, using neighbor dissonance as the cost heuristic to prune the search tree.
+
 ## Ideas
 
-- Find nearest neighbors in 9x9 fashion, and take the 9x9 and attach it to four other 9x9s, making it 18x18, and so on so that you're dealing with chunks instead of trying to compare distance between each pixel all the time. Maybe take a step back as a refinement stage, like removing pixels randomly and filling it back in with the best fit based on the heuristic (probably DTW).
+- **Hierarchical chunking**: Find nearest neighbors in 9x9 blocks, then merge blocks into 18x18, and so on. Refinement stage: randomly remove pixels and fill back in with best DTW fit.
 
-- Consider that the fovea is densely packed, and so you get more information at the center of your vision than the outside. There are patterns that exist of hexagonal packing that can be infinitely densely packed at the center and grow gradually to a fixed size on the borders. Escher demonstrated this, but some finite version of that idea might not be a bad way to try to organize them.
+- **Foveal packing**: Use hexagonal packing that's dense at center and sparse at edges (like the retina). Escher-style infinite density gradients could help organize ambiguous regions.
 
-- Consider an experiment where you take a video then just randomize a few pixel positions and then figure out which ones are wrong and put them back, and figure out what number you'd have to raise that to in order to start seeing serious trouble.
+- **Scramble threshold experiment**: Start with correct video, randomize N positions, solve, then increase N until the solver breaks down. Find the critical threshold.
 
-- Try the thing you did where you demonstrated that the Euclidean distance metric has some real tendencies to actual TV distance, except with DTW side by side to show if DTW is actually a better metric or not.
+- **Distance metric comparison**: Compare Euclidean vs DTW correlation with actual TV distance to validate DTW as the better metric.
