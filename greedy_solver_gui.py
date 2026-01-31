@@ -346,47 +346,11 @@ class GreedySolverGUI:
 
     def do_random_swaps(self, num_swaps):
         """Perform random swaps with no distance limit."""
-        all_positions = [(x, y) for y in range(self.wall.height) for x in range(self.wall.width)]
-        np.random.shuffle(all_positions)
-
-        for i in range(min(num_swaps, len(all_positions) // 2)):
-            pos1 = all_positions[i * 2]
-            pos2 = all_positions[i * 2 + 1]
-            self.wall.swap_positions(pos1, pos2)
+        self.wall.pair_swaps(num_swaps)
 
     def do_short_swaps(self, num_swaps, max_dist):
         """Perform swaps within a maximum distance."""
-        used = set()
-        swaps_made = 0
-        attempts = 0
-
-        while swaps_made < num_swaps and attempts < num_swaps * 100:
-            attempts += 1
-            x1 = np.random.randint(0, self.wall.width)
-            y1 = np.random.randint(0, self.wall.height)
-
-            if (x1, y1) in used:
-                continue
-
-            # Find candidates within distance
-            candidates = []
-            for dx in range(-max_dist, max_dist + 1):
-                for dy in range(-max_dist, max_dist + 1):
-                    if dx == 0 and dy == 0:
-                        continue
-                    x2, y2 = x1 + dx, y1 + dy
-                    if 0 <= x2 < self.wall.width and 0 <= y2 < self.wall.height:
-                        if np.sqrt(dx**2 + dy**2) <= max_dist and (x2, y2) not in used:
-                            candidates.append((x2, y2))
-
-            if not candidates:
-                continue
-
-            x2, y2 = candidates[np.random.randint(len(candidates))]
-            self.wall.swap_positions((x1, y1), (x2, y2))
-            used.add((x1, y1))
-            used.add((x2, y2))
-            swaps_made += 1
+        self.wall.short_swaps(num_swaps, max_dist)
 
     def reset(self):
         """Reset to unscrambled state."""

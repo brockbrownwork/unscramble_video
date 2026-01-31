@@ -204,6 +204,89 @@ class TVWall:
         """Reset all swaps, returning TVs to their original positions."""
         self._init_permutation()
 
+    def short_swaps(self, num_swaps, max_dist, seed=None):
+        """
+        Perform random swaps within a maximum distance.
+
+        Each swap pairs two positions that are within max_dist pixels of each other.
+        Useful for testing local unscrambling algorithms.
+
+        Parameters:
+            num_swaps (int): Number of swap pairs to make.
+            max_dist (int): Maximum Euclidean distance between swapped positions.
+            seed (int, optional): Random seed for reproducibility.
+
+        Returns:
+            list: List of ((x1, y1), (x2, y2)) tuples for each swap made.
+        """
+        if seed is not None:
+            np.random.seed(seed)
+
+        used = set()
+        swap_pairs = []
+        attempts = 0
+        max_attempts = num_swaps * 100
+
+        while len(swap_pairs) < num_swaps and attempts < max_attempts:
+            attempts += 1
+            x1 = np.random.randint(0, self.width)
+            y1 = np.random.randint(0, self.height)
+
+            if (x1, y1) in used:
+                continue
+
+            # Find candidates within distance
+            candidates = []
+            for dx in range(-max_dist, max_dist + 1):
+                for dy in range(-max_dist, max_dist + 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    x2, y2 = x1 + dx, y1 + dy
+                    if 0 <= x2 < self.width and 0 <= y2 < self.height:
+                        if np.sqrt(dx**2 + dy**2) <= max_dist and (x2, y2) not in used:
+                            candidates.append((x2, y2))
+
+            if not candidates:
+                continue
+
+            x2, y2 = candidates[np.random.randint(len(candidates))]
+            pos1, pos2 = (x1, y1), (x2, y2)
+            self.swap_positions(pos1, pos2)
+            used.add(pos1)
+            used.add(pos2)
+            swap_pairs.append((pos1, pos2))
+
+        return swap_pairs
+
+    def pair_swaps(self, num_swaps, seed=None):
+        """
+        Perform random swaps with no distance limit.
+
+        Randomly selects pairs of positions and swaps them.
+
+        Parameters:
+            num_swaps (int): Number of swap pairs to make.
+            seed (int, optional): Random seed for reproducibility.
+
+        Returns:
+            list: List of ((x1, y1), (x2, y2)) tuples for each swap made.
+        """
+        if seed is not None:
+            np.random.seed(seed)
+
+        all_positions = [(x, y) for y in range(self.height) for x in range(self.width)]
+        np.random.shuffle(all_positions)
+
+        swap_pairs = []
+        actual_swaps = min(num_swaps, len(all_positions) // 2)
+        for i in range(actual_swaps):
+            pos1 = all_positions[i * 2]
+            pos2 = all_positions[i * 2 + 1]
+            self.swap_positions(pos1, pos2)
+            swap_pairs.append((pos1, pos2))
+
+        return swap_pairs
+
     def get_tv_color_series(self, orig_x, orig_y):
         """
         Get the color time-series for a TV at its original position.
