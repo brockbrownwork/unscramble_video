@@ -10,7 +10,9 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push)",
-      "Bash(powershell -Command \"Start-Process cmd -ArgumentList ''/k'',''cd /d C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video && python unscramble_som.py --dtw --landmarks 50''\")"
+      "Bash(powershell -Command \"Start-Process cmd -ArgumentList ''/k'',''cd /d C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video && python unscramble_som.py --dtw --landmarks 50''\")",
+      "Bash(dir:*)",
+      "Bash(wc:*)"
     ]
   }
 }
