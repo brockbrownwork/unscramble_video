@@ -84,6 +84,7 @@ class GreedySolverGUI:
         params = [
             ("Frames:", "frames_var", "50"),
             ("Stride:", "stride_var", "10"),
+            ("Crop % (1-100):", "crop_var", "100"),
             ("DTW Window (0-1):", "window_var", "0.1"),
             ("Kernel Size (odd):", "kernel_var", "3"),
         ]
@@ -99,7 +100,7 @@ class GreedySolverGUI:
         metric_row = ttk.Frame(param_frame)
         metric_row.pack(fill=tk.X, pady=2)
         ttk.Label(metric_row, text="Distance Metric:", width=18).pack(side=tk.LEFT)
-        self.metric_var = tk.StringVar(value="dtw")
+        self.metric_var = tk.StringVar(value="euclidean")
         metric_combo = ttk.Combobox(metric_row, textvariable=self.metric_var,
                                     values=["dtw", "euclidean", "manhattan", "cosine"],
                                     width=10, state="readonly")
@@ -150,7 +151,15 @@ class GreedySolverGUI:
                                    width=16, state="readonly")
         strat_combo.pack(side=tk.LEFT)
 
-        # Top-K parameter
+        # Top-N parameter (for identifying high-dissonance positions)
+        topn_row = ttk.Frame(solver_frame)
+        topn_row.pack(fill=tk.X, pady=1)
+        ttk.Label(topn_row, text="Top-N:", width=10).pack(side=tk.LEFT)
+        self.topn_var = tk.StringVar(value="20")
+        ttk.Entry(topn_row, textvariable=self.topn_var, width=6).pack(side=tk.LEFT)
+        ttk.Label(topn_row, text="(# high-diss to identify)", font=("TkDefaultFont", 8)).pack(side=tk.LEFT)
+
+        # Top-K parameter (for solver strategies)
         topk_row = ttk.Frame(solver_frame)
         topk_row.pack(fill=tk.X, pady=1)
         ttk.Label(topk_row, text="Top-K:", width=10).pack(side=tk.LEFT)
@@ -264,11 +273,12 @@ class GreedySolverGUI:
         try:
             num_frames = int(self.frames_var.get())
             stride = int(self.stride_var.get())
+            crop_percent = float(self.crop_var.get())
 
             self.status_label.config(text="Loading video...")
             self.root.update()
 
-            self.wall = TVWall(filepath, num_frames=num_frames, stride=stride)
+            self.wall = TVWall(filepath, num_frames=num_frames, stride=stride, crop_percent=crop_percent)
 
             filename = os.path.basename(filepath)
             self.video_label.config(text=f"{filename}\n"
@@ -487,8 +497,8 @@ class GreedySolverGUI:
                     progress = (idx + 1) / total * 100
                     self.root.after(0, lambda p=progress: self.progress_var.set(p))
 
-            # Cluster into high/low dissonance using max-gap
-            self.high_dissonance_positions = self._cluster_dissonance()
+            # Get top-N most dissonant positions
+            self.high_dissonance_positions = self._get_top_n_dissonance()
 
             self.root.after(0, self._on_identify_complete)
 
@@ -496,39 +506,31 @@ class GreedySolverGUI:
             self.root.after(0, lambda: messagebox.showerror("Error", f"Identification failed: {e}"))
             self.root.after(0, lambda: self.status_label.config(text="Error"))
 
-    def _cluster_dissonance(self):
-        """Cluster positions into high/low dissonance using max-gap analysis."""
+    def _get_top_n_dissonance(self):
+        """Get the top-N most dissonant positions."""
         if self.dissonance_map is None:
             return set()
 
-        # Flatten and sort dissonance values with positions
+        try:
+            top_n = int(self.topn_var.get())
+        except ValueError:
+            top_n = 20
+
+        # Flatten and sort dissonance values with positions (descending)
         height, width = self.wall.height, self.wall.width
         values_with_pos = []
         for y in range(height):
             for x in range(width):
                 values_with_pos.append((self.dissonance_map[y, x], (x, y)))
 
-        values_with_pos.sort(key=lambda x: x[0])
+        values_with_pos.sort(key=lambda x: x[0], reverse=True)
 
-        if len(values_with_pos) < 2:
-            return set()
-
-        # Find largest gap in sorted values
-        max_gap = 0
-        max_gap_idx = len(values_with_pos) // 2  # Default to median
-
-        for i in range(len(values_with_pos) - 1):
-            gap = values_with_pos[i + 1][0] - values_with_pos[i][0]
-            if gap > max_gap:
-                max_gap = gap
-                max_gap_idx = i
-
-        # High dissonance = above the gap
-        threshold = values_with_pos[max_gap_idx][0]
+        # Take top-N positions
+        top_n = min(top_n, len(values_with_pos))
         high_positions = set()
-        for val, pos in values_with_pos:
-            if val > threshold:
-                high_positions.add(pos)
+        for i in range(top_n):
+            _, pos = values_with_pos[i]
+            high_positions.add(pos)
 
         return high_positions
 
@@ -705,7 +707,12 @@ class GreedySolverGUI:
         return False
 
     def _greedy_step(self):
-        """Greedy strategy: swap highest-dissonance position with its best neighbor."""
+        """Greedy strategy: swap highest-dissonance position with its best neighbor.
+
+        Uses local dissonance optimization: only computes dissonance for the two
+        swapped positions rather than the total dissonance of all high-dissonance
+        positions. This is much faster.
+        """
         if not self.high_dissonance_positions:
             return False
 
@@ -730,9 +737,9 @@ class GreedySolverGUI:
         if best_pos is None:
             return False
 
-        # Try swapping with each other high-dissonance position
+        # Compute current dissonance for best_pos
         x1, y1 = best_pos
-        initial_total = self._compute_high_diss_total()
+        diss_best_before = best_diss  # Already computed above
 
         best_swap = None
         best_improvement = 0
@@ -741,12 +748,26 @@ class GreedySolverGUI:
             if other_pos == best_pos:
                 continue
 
+            x2, y2 = other_pos
+
+            # Compute current dissonance for other_pos before swap
+            diss_other_before = self.wall.compute_position_dissonance(
+                x2, y2, self.current_series, kernel_size, metric, window)
+
             # Tentatively swap
             self.wall.swap_positions(best_pos, other_pos)
             self.current_series = self.get_current_series()
 
-            new_total = self._compute_high_diss_total()
-            improvement = initial_total - new_total
+            # Compute dissonance for both positions after swap
+            diss_best_after = self.wall.compute_position_dissonance(
+                x1, y1, self.current_series, kernel_size, metric, window)
+            diss_other_after = self.wall.compute_position_dissonance(
+                x2, y2, self.current_series, kernel_size, metric, window)
+
+            # Improvement is reduction in combined dissonance of the two positions
+            before_sum = diss_best_before + diss_other_before
+            after_sum = diss_best_after + diss_other_after
+            improvement = before_sum - after_sum
 
             if improvement > best_improvement:
                 best_improvement = improvement
@@ -754,6 +775,9 @@ class GreedySolverGUI:
 
             # Revert
             self.wall.swap_positions(best_pos, other_pos)
+
+        # Restore current_series to match reverted state
+        self.current_series = self.get_current_series()
 
         if best_swap is not None and best_improvement > 0:
             self.wall.swap_positions(best_pos, best_swap)
@@ -763,7 +787,12 @@ class GreedySolverGUI:
         return False
 
     def _top_k_best_step(self):
-        """Top-K strategy: try all pairwise swaps among top-K highest dissonance."""
+        """Top-K strategy: try all pairwise swaps among top-K highest dissonance.
+
+        Uses local dissonance optimization: only computes dissonance for the two
+        swapped positions rather than the total dissonance of all high-dissonance
+        positions. This is much faster.
+        """
         if not self.high_dissonance_positions:
             return False
 
@@ -775,7 +804,7 @@ class GreedySolverGUI:
         # Recompute current series
         self.current_series = self.get_current_series()
 
-        # Get top-K highest dissonance positions
+        # Get top-K highest dissonance positions with their dissonance values
         diss_list = []
         for pos in self.high_dissonance_positions:
             x, y = pos
@@ -784,12 +813,14 @@ class GreedySolverGUI:
             diss_list.append((d, pos))
 
         diss_list.sort(reverse=True)
-        top_positions = [pos for _, pos in diss_list[:topk]]
+        top_k_with_diss = diss_list[:topk]
+        top_positions = [pos for _, pos in top_k_with_diss]
+        # Map position to its current dissonance for quick lookup
+        diss_before = {pos: d for d, pos in top_k_with_diss}
 
         if len(top_positions) < 2:
             return False
 
-        initial_total = self._compute_high_diss_total()
         best_swap = None
         best_improvement = 0
 
@@ -798,17 +829,37 @@ class GreedySolverGUI:
             for j in range(i + 1, len(top_positions)):
                 pos1 = top_positions[i]
                 pos2 = top_positions[j]
+                x1, y1 = pos1
+                x2, y2 = pos2
 
+                # Get dissonance before swap
+                diss1_before = diss_before[pos1]
+                diss2_before = diss_before[pos2]
+
+                # Tentatively swap
                 self.wall.swap_positions(pos1, pos2)
                 self.current_series = self.get_current_series()
-                new_total = self._compute_high_diss_total()
-                improvement = initial_total - new_total
+
+                # Compute dissonance after swap for both positions
+                diss1_after = self.wall.compute_position_dissonance(
+                    x1, y1, self.current_series, kernel_size, metric, window)
+                diss2_after = self.wall.compute_position_dissonance(
+                    x2, y2, self.current_series, kernel_size, metric, window)
+
+                # Improvement is reduction in combined dissonance
+                before_sum = diss1_before + diss2_before
+                after_sum = diss1_after + diss2_after
+                improvement = before_sum - after_sum
 
                 if improvement > best_improvement:
                     best_improvement = improvement
                     best_swap = (pos1, pos2)
 
+                # Revert
                 self.wall.swap_positions(pos1, pos2)
+
+        # Restore current_series to match reverted state
+        self.current_series = self.get_current_series()
 
         if best_swap is not None and best_improvement > 0:
             self.wall.swap_positions(best_swap[0], best_swap[1])
@@ -818,7 +869,12 @@ class GreedySolverGUI:
         return False
 
     def _sa_step(self):
-        """Simulated annealing step: random swap among top-K, accept with probability."""
+        """Simulated annealing step: random swap among top-K, accept with probability.
+
+        Uses local dissonance optimization: only computes dissonance for the two
+        swapped positions rather than the total dissonance of all high-dissonance
+        positions. This is much faster.
+        """
         if not self.high_dissonance_positions:
             return False
 
@@ -832,7 +888,7 @@ class GreedySolverGUI:
         # Recompute current series
         self.current_series = self.get_current_series()
 
-        # Get top-K highest dissonance positions
+        # Get top-K highest dissonance positions with their dissonance values
         diss_list = []
         for pos in self.high_dissonance_positions:
             x, y = pos
@@ -841,7 +897,9 @@ class GreedySolverGUI:
             diss_list.append((d, pos))
 
         diss_list.sort(reverse=True)
-        top_positions = [pos for _, pos in diss_list[:topk]]
+        top_k_with_diss = diss_list[:topk]
+        top_positions = [pos for _, pos in top_k_with_diss]
+        diss_before = {pos: d for d, pos in top_k_with_diss}
 
         if len(top_positions) < 2:
             return False
@@ -849,14 +907,27 @@ class GreedySolverGUI:
         # Random swap among top-K
         idx1, idx2 = np.random.choice(len(top_positions), size=2, replace=False)
         pos1, pos2 = top_positions[idx1], top_positions[idx2]
+        x1, y1 = pos1
+        x2, y2 = pos2
 
-        initial_total = self._compute_high_diss_total()
+        # Get dissonance before swap
+        diss1_before = diss_before[pos1]
+        diss2_before = diss_before[pos2]
 
+        # Perform swap
         self.wall.swap_positions(pos1, pos2)
         self.current_series = self.get_current_series()
-        new_total = self._compute_high_diss_total()
 
-        delta = new_total - initial_total
+        # Compute dissonance after swap
+        diss1_after = self.wall.compute_position_dissonance(
+            x1, y1, self.current_series, kernel_size, metric, window)
+        diss2_after = self.wall.compute_position_dissonance(
+            x2, y2, self.current_series, kernel_size, metric, window)
+
+        # Delta is increase in combined dissonance (positive = worse)
+        before_sum = diss1_before + diss2_before
+        after_sum = diss1_after + diss2_after
+        delta = after_sum - before_sum
 
         # Accept if improvement or with probability based on temperature
         accept = False
@@ -878,7 +949,12 @@ class GreedySolverGUI:
         return accept
 
     def _compute_high_diss_total(self):
-        """Compute total dissonance over high-dissonance positions only."""
+        """Compute total dissonance over high-dissonance positions only.
+
+        Note: This is only used for metrics/display purposes, not for swap evaluation.
+        The solver strategies use local dissonance (comparing just the two swapped
+        positions) for efficiency.
+        """
         if not self.high_dissonance_positions:
             return 0
 
@@ -930,6 +1006,7 @@ class GreedySolverGUI:
         self.update_metrics()
         self.update_display()
         self.update_scramble_info()
+        self.root.update()  # Force UI refresh
 
     def toggle_pause(self):
         """Toggle solver pause state."""

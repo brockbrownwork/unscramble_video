@@ -251,25 +251,36 @@ A two-phase approach that first identifies misplaced TVs, then optimizes their a
 
 ### Phase 2: Optimize High-Dissonance Positions
 
-Once we have the set of suspected misplaced positions, rearrange only those positions to minimize total dissonance.
+Once we have the set of suspected misplaced positions, rearrange only those positions to minimize dissonance.
+
+**Local dissonance optimization:**
+
+When evaluating a swap between positions A and B, we only compute the dissonance of A and B in their new positions (after the swap) and compare to their dissonance before the swap. This is much faster than recomputing the total dissonance of all high-dissonance positions.
+
+```
+improvement = (diss_A_before + diss_B_before) - (diss_A_after + diss_B_after)
+if improvement > 0: keep swap
+else: revert
+```
 
 **Basic greedy approach:**
 ```
 for each high-dissonance position A:
     for each other high-dissonance position B:
         tentatively swap A ↔ B
-        compute new total dissonance of high-dissonance set
-        if improved: keep swap
+        compute dissonance of A and B in their new positions
+        if combined dissonance improved: keep swap
         else: revert
 ```
 
-**Top-K permutation approach (optional):**
-- Instead of pairwise swaps, try all permutations of the top-K highest dissonance positions
-- More expensive but finds better solutions for small K
+**Top-K approach:**
+- Consider top-K highest dissonance positions
+- Try all pairwise swaps among them
+- Keep the swap with best local improvement
 
 ### Key Optimization
 
-The solver only recomputes dissonance for the high-dissonance subset, not the entire grid. This makes it tractable since we're rearranging a small number of positions rather than the full W×H grid.
+The solver uses **local dissonance** for swap evaluation: only computing dissonance for the two positions being swapped, not the entire high-dissonance set. This reduces complexity from O(N) to O(1) per swap evaluation, where N is the number of high-dissonance positions.
 
 ### GUI Features
 
@@ -290,13 +301,11 @@ Interactive tool for visualizing dissonance:
 
 ### Greedy Solver GUI (`greedy_solver_gui.py`)
 
-*Note: this is not currently implemented. The solving method was too expensive because it calculates neighbor dissonance for each location each iteration. It should focus on just rearranging the locations with the highest dissonance first. I will create a new specification document at some point for it.*
-
 Interactive solver with real-time animation:
 - Load video, scramble, then watch the solver unscramble
 - Compare strategies: greedy, best-of-top-K, simulated annealing
+- Uses **local dissonance optimization** for fast swap evaluation (only computes dissonance for the two swapped positions)
 - Tune parameters: top-K, max iterations, temperature, cooling rate
-- Run batch experiments across multiple scramble levels
 - View progress charts and correctness maps
 
 ## CLI Experiment (`experiment_neighbor_dissonance.py`)
