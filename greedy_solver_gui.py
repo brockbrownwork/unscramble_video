@@ -51,6 +51,9 @@ class GreedySolverGUI:
         self.iteration = 0
         self.total_dissonance_history = []
         self.correct_count_history = []
+        self.last_swap = None  # Track the last swap for visualization
+        self.pending_swap = None  # Swap identified but not yet executed
+        self.show_pre_swap = False  # Flag to show pre-swap state with line
 
         # Display settings
         self.display_scale = 1
@@ -338,6 +341,9 @@ class GreedySolverGUI:
         self.correct_count_history = []
         self.solver_running = False
         self.solver_paused = False
+        self.last_swap = None
+        self.pending_swap = None
+        self.show_pre_swap = False
         self.update_scramble_info()
         self.results_text.delete(1.0, tk.END)
 
@@ -693,8 +699,30 @@ class GreedySolverGUI:
                 if not self.solver_running:
                     break
 
-                # Run one iteration
-                improved = self._solver_step(strategy)
+                # Find best swap (but don't execute yet)
+                best_swap = self._find_best_swap(strategy)
+
+                if best_swap is not None:
+                    # Show pre-swap state with the line
+                    self.pending_swap = best_swap
+                    self.last_swap = best_swap
+                    self.show_pre_swap = True
+                    self.root.after(0, self.update_display)
+
+                    # Wait to show the pre-swap visualization
+                    time.sleep(0.5)
+
+                    if not self.solver_running:
+                        break
+
+                    # Execute the swap
+                    self._execute_swap(best_swap, strategy)
+                    self.show_pre_swap = False
+                    improved = True
+                else:
+                    self.last_swap = None
+                    self.pending_swap = None
+                    improved = False
 
                 self.iteration += 1
 
@@ -704,7 +732,7 @@ class GreedySolverGUI:
                 correct = self.count_correct_positions()
                 self.correct_count_history.append(correct)
 
-                # Update UI
+                # Update UI (post-swap)
                 progress = (self.iteration / max_iters) * 100
                 self.root.after(0, lambda p=progress: self.progress_var.set(p))
                 self.root.after(0, self.update_metrics)
@@ -716,8 +744,10 @@ class GreedySolverGUI:
                     self.root.after(0, lambda: self.status_label.config(text="Converged (no improvement)"))
                     break
 
-                # Delay for animation
-                time.sleep(delay_ms / 1000.0)
+                # Delay for animation (remaining time after pre-swap delay)
+                remaining_delay = max(0, delay_ms / 1000.0 - 0.5)
+                if remaining_delay > 0:
+                    time.sleep(remaining_delay)
 
             self.root.after(0, self._on_solver_done)
 
@@ -734,6 +764,205 @@ class GreedySolverGUI:
         elif strategy == "simulated_annealing":
             return self._sa_step()
         return False
+
+    def _find_best_swap(self, strategy):
+        """Find the best swap without executing it. Returns swap tuple or None."""
+        if strategy == "greedy":
+            return self._find_greedy_swap()
+        elif strategy == "top_k_best":
+            return self._find_top_k_swap()
+        elif strategy == "simulated_annealing":
+            return self._find_sa_swap()
+        return None
+
+    def _execute_swap(self, swap, strategy):
+        """Execute a swap that was found by _find_best_swap."""
+        if swap is None:
+            return
+        pos1, pos2 = swap
+        self.wall.swap_positions(pos1, pos2)
+        self.current_series = self.get_current_series()
+        self.last_swap = swap
+
+        # For SA, also cool down
+        if strategy == "simulated_annealing":
+            temp = float(self.temp_var.get())
+            cooling = float(self.cooling_var.get())
+            self.temp_var.set(f"{temp * cooling:.4f}")
+
+    def _find_greedy_swap(self):
+        """Find best greedy swap without executing. Returns (pos1, pos2) or None."""
+        if not self.high_dissonance_positions:
+            return None
+
+        kernel_size = int(self.kernel_var.get())
+        window = float(self.window_var.get())
+        metric = self.metric_var.get()
+
+        self.current_series = self.get_current_series()
+
+        all_diss = self.wall.compute_batch_dissonance(
+            list(self.high_dissonance_positions),
+            self.current_series, kernel_size, metric, window
+        )
+
+        best_pos = max(self.high_dissonance_positions, key=lambda p: all_diss[p])
+        x1, y1 = best_pos
+        diss_best_before = all_diss[best_pos]
+
+        best_swap = None
+        best_improvement = 0
+
+        series_copy = self.current_series.copy()
+
+        for other_pos in self.high_dissonance_positions:
+            if other_pos == best_pos:
+                continue
+
+            x2, y2 = other_pos
+            diss_other_before = all_diss[other_pos]
+
+            series_copy[y1, x1], series_copy[y2, x2] = \
+                series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+
+            diss_best_after = self.wall.compute_position_dissonance(
+                x1, y1, series_copy, kernel_size, metric, window)
+            diss_other_after = self.wall.compute_position_dissonance(
+                x2, y2, series_copy, kernel_size, metric, window)
+
+            improvement = (diss_best_before + diss_other_before) - (diss_best_after + diss_other_after)
+
+            if improvement > best_improvement:
+                best_improvement = improvement
+                best_swap = other_pos
+
+            series_copy[y1, x1], series_copy[y2, x2] = \
+                series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+
+        if best_swap is not None and best_improvement > 0:
+            return (best_pos, best_swap)
+        return None
+
+    def _find_top_k_swap(self):
+        """Find best top-K swap without executing. Returns (pos1, pos2) or None."""
+        if not self.high_dissonance_positions:
+            return None
+
+        topk = int(self.topk_var.get())
+        kernel_size = int(self.kernel_var.get())
+        window = float(self.window_var.get())
+        metric = self.metric_var.get()
+
+        self.current_series = self.get_current_series()
+
+        all_diss = self.wall.compute_batch_dissonance(
+            list(self.high_dissonance_positions),
+            self.current_series, kernel_size, metric, window
+        )
+
+        diss_list = [(all_diss[pos], pos) for pos in self.high_dissonance_positions]
+        diss_list.sort(reverse=True)
+        top_k_with_diss = diss_list[:topk]
+        top_positions = [pos for _, pos in top_k_with_diss]
+        diss_before = {pos: d for d, pos in top_k_with_diss}
+
+        if len(top_positions) < 2:
+            return None
+
+        best_swap = None
+        best_improvement = 0
+
+        series_copy = self.current_series.copy()
+        n_positions = len(top_positions)
+
+        for i in range(n_positions):
+            for j in range(i + 1, n_positions):
+                pos1 = top_positions[i]
+                pos2 = top_positions[j]
+                x1, y1 = pos1
+                x2, y2 = pos2
+
+                diss1_before = diss_before[pos1]
+                diss2_before = diss_before[pos2]
+
+                series_copy[y1, x1], series_copy[y2, x2] = \
+                    series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+
+                diss1_after = self.wall.compute_position_dissonance(
+                    x1, y1, series_copy, kernel_size, metric, window)
+                diss2_after = self.wall.compute_position_dissonance(
+                    x2, y2, series_copy, kernel_size, metric, window)
+
+                improvement = (diss1_before + diss2_before) - (diss1_after + diss2_after)
+
+                if improvement > best_improvement:
+                    best_improvement = improvement
+                    best_swap = (pos1, pos2)
+
+                series_copy[y1, x1], series_copy[y2, x2] = \
+                    series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+
+        if best_swap is not None and best_improvement > 0:
+            return best_swap
+        return None
+
+    def _find_sa_swap(self):
+        """Find SA swap (random among top-K, accept probabilistically). Returns (pos1, pos2) or None."""
+        if not self.high_dissonance_positions:
+            return None
+
+        topk = int(self.topk_var.get())
+        temp = float(self.temp_var.get())
+        kernel_size = int(self.kernel_var.get())
+        window = float(self.window_var.get())
+        metric = self.metric_var.get()
+
+        self.current_series = self.get_current_series()
+
+        all_diss = self.wall.compute_batch_dissonance(
+            list(self.high_dissonance_positions),
+            self.current_series, kernel_size, metric, window
+        )
+
+        diss_list = [(all_diss[pos], pos) for pos in self.high_dissonance_positions]
+        diss_list.sort(reverse=True)
+        top_k_with_diss = diss_list[:topk]
+        top_positions = [pos for _, pos in top_k_with_diss]
+        diss_before = {pos: d for d, pos in top_k_with_diss}
+
+        if len(top_positions) < 2:
+            return None
+
+        idx1, idx2 = np.random.choice(len(top_positions), size=2, replace=False)
+        pos1, pos2 = top_positions[idx1], top_positions[idx2]
+        x1, y1 = pos1
+        x2, y2 = pos2
+
+        diss1_before = diss_before[pos1]
+        diss2_before = diss_before[pos2]
+
+        series_copy = self.current_series.copy()
+        series_copy[y1, x1], series_copy[y2, x2] = \
+            series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+
+        diss1_after = self.wall.compute_position_dissonance(
+            x1, y1, series_copy, kernel_size, metric, window)
+        diss2_after = self.wall.compute_position_dissonance(
+            x2, y2, series_copy, kernel_size, metric, window)
+
+        delta = (diss1_after + diss2_after) - (diss1_before + diss2_before)
+
+        accept = False
+        if delta < 0:
+            accept = True
+        else:
+            prob = np.exp(-delta / temp) if temp > 0 else 0
+            if np.random.random() < prob:
+                accept = True
+
+        if accept:
+            return (pos1, pos2)
+        return None
 
     def _greedy_step(self):
         """Greedy strategy: swap highest-dissonance position with its best neighbor.
@@ -1008,7 +1237,7 @@ class GreedySolverGUI:
         return sum(all_diss.values())
 
     def step_solver(self):
-        """Execute a single solver step."""
+        """Execute a single solver step with pre-swap visualization."""
         if self.wall is None:
             messagebox.showwarning("Warning", "Load a video first")
             return
@@ -1027,7 +1256,34 @@ class GreedySolverGUI:
             correct = self.count_correct_positions()
             self.correct_count_history.append(correct)
 
-        improved = self._solver_step(strategy)
+        # Find the best swap first
+        best_swap = self._find_best_swap(strategy)
+
+        if best_swap is not None:
+            # Show pre-swap state with the line
+            self.pending_swap = best_swap
+            self.last_swap = best_swap
+            self.show_pre_swap = True
+            self.update_display()
+            self.root.update()
+
+            # Schedule the actual swap after 100ms
+            self.root.after(100, lambda: self._complete_step(best_swap, strategy))
+        else:
+            self.last_swap = None
+            self.pending_swap = None
+            self.iteration += 1
+            self.status_label.config(text=f"Step {self.iteration}: No improvement")
+            self.update_metrics()
+            self.update_display()
+            self.update_scramble_info()
+            self.root.update()
+
+    def _complete_step(self, swap, strategy):
+        """Complete a single step after pre-swap visualization delay."""
+        # Execute the swap
+        self._execute_swap(swap, strategy)
+        self.show_pre_swap = False
         self.iteration += 1
 
         total_d = self._compute_high_diss_total()
@@ -1035,13 +1291,12 @@ class GreedySolverGUI:
         correct = self.count_correct_positions()
         self.correct_count_history.append(correct)
 
-        status = "Improved" if improved else "No improvement"
-        self.status_label.config(text=f"Step {self.iteration}: {status}")
+        self.status_label.config(text=f"Step {self.iteration}: Improved")
 
         self.update_metrics()
         self.update_display()
         self.update_scramble_info()
-        self.root.update()  # Force UI refresh
+        self.root.update()
 
     def toggle_pause(self):
         """Toggle solver pause state."""
@@ -1109,6 +1364,57 @@ class GreedySolverGUI:
         # Update canvas
         self.canvas.delete("all")
         self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo)
+
+        # Draw swap line if there was a recent swap
+        if self.last_swap is not None:
+            self._draw_swap_line()
+
+    def _draw_swap_line(self):
+        """Draw a line between the two swapped positions, offset to not overlap pixels."""
+        if self.last_swap is None or self.wall is None:
+            return
+
+        pos1, pos2 = self.last_swap
+        x1, y1 = pos1
+        x2, y2 = pos2
+
+        # Convert pixel coordinates to canvas coordinates (center of each pixel)
+        scale = self.display_scale
+        cx1 = (x1 + 0.5) * scale
+        cy1 = (y1 + 0.5) * scale
+        cx2 = (x2 + 0.5) * scale
+        cy2 = (y2 + 0.5) * scale
+
+        # Calculate direction vector
+        dx = cx2 - cx1
+        dy = cy2 - cy1
+        length = (dx**2 + dy**2) ** 0.5
+
+        if length < 0.001:
+            return
+
+        # Normalize direction
+        dx /= length
+        dy /= length
+
+        # Offset the line endpoints to start/end outside the pixel boundaries
+        # Use half the pixel size plus a small margin
+        offset = scale * 0.7  # Stop line before pixel center
+
+        # Adjust start and end points
+        start_x = cx1 + dx * offset
+        start_y = cy1 + dy * offset
+        end_x = cx2 - dx * offset
+        end_y = cy2 - dy * offset
+
+        # Only draw if line has positive length after offsets
+        remaining_length = length - 2 * offset
+        if remaining_length > 0:
+            # Draw the line with cyan color and decent width
+            self.canvas.create_line(
+                start_x, start_y, end_x, end_y,
+                fill='#00FFFF', width=2, arrow=tk.BOTH
+            )
 
     def get_overlay_image(self, base_img, overlay_img):
         """Blend base image with overlay using alpha."""
