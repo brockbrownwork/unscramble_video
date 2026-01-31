@@ -28,7 +28,7 @@ The unscramble problem is analogous: we're trying to recover spatial topology fr
 - **Core Libraries:** opencv-python, numpy, umap-learn, matplotlib, Pillow, tqdm, scipy
 - **Distance Metrics:** aeon (DTW pairwise distances)
 - **ML/Evaluation:** scikit-learn (precision-recall, ROC curves)
-- **GUI:** tkinter (interactive experiments)
+- **GUI:** PyQt5 (main solver GUI), tkinter (legacy experiments)
 - **External Tools:** ffmpeg (via subprocess)
 - **Development:** Jupyter Notebooks for experimentation
 
@@ -38,7 +38,8 @@ The unscramble problem is analogous: we're trying to recover spatial topology fr
 unscramble_video/
 ├── tv_wall.py                         # TVWall class - core abstraction
 ├── neighbor_dissonance_gui.py         # Interactive dissonance visualization
-├── greedy_solver_gui.py               # Interactive solver with multiple strategies
+├── greedy_solver_gui.py               # Interactive solver (tkinter, legacy)
+├── greedy_solver_gui_pyqt.py          # Interactive solver (PyQt5, cute pink theme)
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
 ├── test_tv_wall.py                    # Unit tests for TVWall
 ├── unscramble.py                      # Original UMAP approach (Euclidean)
@@ -59,8 +60,9 @@ pip install -r requirements.txt
 pip install aeon scikit-learn  # Additional deps for experiments
 
 # Run interactive GUIs
-python neighbor_dissonance_gui.py  # Visualize dissonance heatmaps
-python greedy_solver_gui.py        # Run solver with animation
+python neighbor_dissonance_gui.py    # Visualize dissonance heatmaps
+python greedy_solver_gui_pyqt.py     # Run solver with animation (PyQt5, pink theme)
+python greedy_solver_gui.py          # Run solver (tkinter, legacy)
 
 # Run CLI experiment
 python experiment_neighbor_dissonance.py -v video.mkv -n 20 -f 100
@@ -317,14 +319,17 @@ Interactive tool for visualizing dissonance:
 - View heatmaps with swap markers
 - Compare dissonance distributions between swapped and non-swapped positions
 
-### Greedy Solver GUI (`greedy_solver_gui.py`)
+### Greedy Solver GUI (`greedy_solver_gui_pyqt.py`)
 
-Interactive solver with real-time animation:
+Interactive solver with real-time animation (PyQt5 with cute pink theme):
 - Load video, scramble, then watch the solver unscramble
 - Compare strategies: greedy, best-of-top-K, simulated annealing
 - Uses **local dissonance optimization** for fast swap evaluation (only computes dissonance for the two swapped positions)
 - Tune parameters: top-K, max iterations, temperature, cooling rate
 - View progress charts and correctness maps
+- Cute pink UI theme with rounded corners, gradients, and hover effects
+
+There's also a legacy tkinter version (`greedy_solver_gui.py`) with the same functionality.
 
 ## CLI Experiment (`experiment_neighbor_dissonance.py`)
 
