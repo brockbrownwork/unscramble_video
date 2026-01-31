@@ -4,8 +4,6 @@ tqdm
 umap-learn
 matplotlib
 Pillow
-ipython
-quadrilateral-fitter
-fastdtw
 scipy
-minisom
+aeon
+scikit-learn
