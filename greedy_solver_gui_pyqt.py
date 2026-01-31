@@ -1247,7 +1247,7 @@ class GreedySolverGUI(QMainWindow):
 
         # Offset to keep arrows just outside the pixel boundaries
         arrow_size = 8
-        pixel_offset = scale * 0.5 + 2  # Half pixel size + small margin
+        pixel_offset = scale * 0.5 + 4  # Half pixel size + small margin
 
         start_x = cx1 + dx * pixel_offset
         start_y = cy1 + dy * pixel_offset
