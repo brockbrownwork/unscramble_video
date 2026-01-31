@@ -125,12 +125,17 @@ class GreedySolverGUI:
         ttk.Entry(dist_row, textvariable=self.max_dist_var, width=6).pack(side=tk.LEFT)
         ttk.Label(dist_row, text="px").pack(side=tk.LEFT)
 
-        # Scramble buttons
+        # Scramble buttons - row 1
         btn_frame = ttk.Frame(scramble_frame)
         btn_frame.pack(fill=tk.X, pady=2)
         ttk.Button(btn_frame, text="Pair Swap", command=self.pair_swap, width=10).pack(side=tk.LEFT, padx=1)
         ttk.Button(btn_frame, text="Short Swap", command=self.short_swap, width=10).pack(side=tk.LEFT, padx=1)
-        ttk.Button(btn_frame, text="Full Scramble", command=self.full_scramble, width=11).pack(side=tk.LEFT, padx=1)
+        ttk.Button(btn_frame, text="Shuffle", command=self.shuffle, width=10).pack(side=tk.LEFT, padx=1)
+
+        # Scramble buttons - row 2
+        btn_frame2_scramble = ttk.Frame(scramble_frame)
+        btn_frame2_scramble.pack(fill=tk.X, pady=2)
+        ttk.Button(btn_frame2_scramble, text="Full Scramble", command=self.full_scramble, width=11).pack(side=tk.LEFT, padx=1)
 
         ttk.Button(scramble_frame, text="Reset All", command=self.reset_all).pack(fill=tk.X, pady=2)
 
@@ -405,6 +410,37 @@ class GreedySolverGUI:
 
         if len(swap_pairs) < num_swaps:
             messagebox.showinfo("Info", f"Made {len(swap_pairs)}/{num_swaps} swaps")
+
+        self.dissonance_map = None
+        self.high_dissonance_positions = set()
+        self.update_scramble_info()
+        self.update_display()
+
+    def shuffle(self):
+        """Shuffle a subset of random positions (uses num_swaps as number of positions)."""
+        if self.wall is None:
+            messagebox.showwarning("Warning", "Load a video first")
+            return
+
+        try:
+            num_positions = int(self.num_swaps_var.get())
+        except ValueError:
+            messagebox.showerror("Error", "Invalid number of positions")
+            return
+
+        # Reset first, then shuffle num_positions random positions
+        self.wall.reset_swaps()
+        self.wall.random_swaps(num_positions)
+
+        # Track which positions were shuffled by finding non-identity mappings
+        self.swapped_positions = set()
+        for y in range(self.wall.height):
+            for x in range(self.wall.width):
+                orig_x, orig_y = self.wall.get_original_position(x, y)
+                if orig_x != x or orig_y != y:
+                    self.swapped_positions.add((x, y))
+
+        self.swap_pairs = []  # Can't track individual pairs for shuffle
 
         self.dissonance_map = None
         self.high_dissonance_positions = set()
