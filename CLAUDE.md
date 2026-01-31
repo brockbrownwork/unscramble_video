@@ -226,7 +226,7 @@ dissonance(X) = mean( distance(X, neighbor) for each neighbor N )
 - **Low dissonance**: TV fits well with neighbors (likely in correct position)
 - **High dissonance**: TV is dissimilar to neighbors (likely misplaced, candidate for swapping)
 
-## Solving Strategies
+## Possible Solving Strategies
 
 The `greedy_solver_gui.py` implements three strategies:
 
@@ -235,6 +235,47 @@ The `greedy_solver_gui.py` implements three strategies:
 2. **Best of Top-K**: Consider top-K highest dissonance positions, try all pairwise swaps among them, keep the best improvement
 
 3. **Simulated Annealing**: Randomly swap among top-K candidates, accept worse moves probabilistically based on temperature (decays over iterations)
+
+## Greedy Solver Procedure
+
+A two-phase approach that first identifies misplaced TVs, then optimizes their arrangement.
+
+### Phase 1: Identify High-Dissonance Positions
+
+1. **Compute dissonance map** for all positions
+2. **Classify positions** into two groups using 1D clustering:
+   - **High dissonance** (likely misplaced)
+   - **Low dissonance** (likely correct)
+3. **Clustering method**: Use max-gap analysis to find the natural separation point
+4. **Evaluate classifier quality** with precision, recall, and F-score against ground truth
+
+### Phase 2: Optimize High-Dissonance Positions
+
+Once we have the set of suspected misplaced positions, rearrange only those positions to minimize total dissonance.
+
+**Basic greedy approach:**
+```
+for each high-dissonance position A:
+    for each other high-dissonance position B:
+        tentatively swap A ↔ B
+        compute new total dissonance of high-dissonance set
+        if improved: keep swap
+        else: revert
+```
+
+**Top-K permutation approach (optional):**
+- Instead of pairwise swaps, try all permutations of the top-K highest dissonance positions
+- More expensive but finds better solutions for small K
+
+### Key Optimization
+
+The solver only recomputes dissonance for the high-dissonance subset, not the entire grid. This makes it tractable since we're rearranging a small number of positions rather than the full W×H grid.
+
+### GUI Features
+
+- **Step button**: Execute one swap iteration with visual feedback
+- **Animation**: Watch positions swap in real-time
+- **Metrics display**: Show total dissonance of the high dissonance positions
 
 ## GUI Tools
 
@@ -248,6 +289,8 @@ Interactive tool for visualizing dissonance:
 - Compare dissonance distributions between swapped and non-swapped positions
 
 ### Greedy Solver GUI (`greedy_solver_gui.py`)
+
+*Note: this is not currently implemented. The solving method was too expensive because it calculates neighbor dissonance for each location each iteration. It should focus on just rearranging the locations with the highest dissonance first. I will create a new specification document at some point for it.*
 
 Interactive solver with real-time animation:
 - Load video, scramble, then watch the solver unscramble
