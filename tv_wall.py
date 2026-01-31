@@ -456,16 +456,22 @@ class TVWall:
         elif distance_metric == 'squared':
             from aeon.distances import squared_pairwise_distance
             distances = squared_pairwise_distance(stacked)
+        elif distance_metric == 'manhattan':
+            from aeon.distances import manhattan_pairwise_distance
+            distances = manhattan_pairwise_distance(stacked)
+        elif distance_metric == 'cosine':
+            # Compute cosine distance manually (1 - cosine similarity)
+            # Flatten each series to 1D for cosine computation
+            flat = stacked.reshape(stacked.shape[0], -1)
+            from scipy.spatial.distance import cdist
+            distances = cdist(flat, flat, metric='cosine')
         else:
             # Try to import the requested metric from aeon.distances
             import aeon.distances as aeon_dist
             pairwise_func = getattr(aeon_dist, f'{distance_metric}_pairwise_distance', None)
             if pairwise_func is None:
                 raise ValueError(f"Unknown distance metric: {distance_metric}")
-            if distance_metric == 'dtw':
-                distances = pairwise_func(stacked, window=window)
-            else:
-                distances = pairwise_func(stacked)
+            distances = pairwise_func(stacked)
 
         return distances[0, 1:].mean()
 

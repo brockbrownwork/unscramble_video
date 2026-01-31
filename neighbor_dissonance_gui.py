@@ -16,6 +16,9 @@ import numpy as np
 from PIL import Image, ImageTk
 import threading
 from collections import deque
+import os
+import subprocess
+import sys
 
 from tv_wall import TVWall
 
@@ -28,8 +31,7 @@ class NeighborDissonanceGUI:
 
         self.wall = None
         self.all_series = None  # Precomputed color series
-        self.dissonance_dtw = None  # DTW dissonance heatmap
-        self.dissonance_euc = None  # Euclidean dissonance heatmap
+        self.dissonance_maps = {}  # Dict of metric_name -> dissonance heatmap
         self.swapped_positions = set()  # Track which positions have been swapped
         self.swap_pairs = []  # List of (pos1, pos2) swap pairs
         self.comparison_positions = set()  # Random positions for comparison
@@ -38,6 +40,7 @@ class NeighborDissonanceGUI:
         self.current_frame = 0
         self.selected_position = None
         self.current_kernel_size = 3
+        self.active_metrics = []  # List of metrics that were computed
 
         self.setup_ui()
 
@@ -119,6 +122,20 @@ class NeighborDissonanceGUI:
         compute_frame = ttk.LabelFrame(left_panel, text="Dissonance", padding="5")
         compute_frame.pack(fill=tk.X, pady=5)
 
+        ttk.Label(compute_frame, text="Distance metrics:").pack(anchor=tk.W)
+        metrics_frame = ttk.Frame(compute_frame)
+        metrics_frame.pack(fill=tk.X)
+
+        self.use_dtw_var = tk.BooleanVar(value=True)
+        self.use_euclidean_var = tk.BooleanVar(value=True)
+        self.use_cosine_var = tk.BooleanVar(value=False)
+        self.use_manhattan_var = tk.BooleanVar(value=False)
+
+        ttk.Checkbutton(metrics_frame, text="DTW", variable=self.use_dtw_var).pack(side=tk.LEFT)
+        ttk.Checkbutton(metrics_frame, text="Euclidean", variable=self.use_euclidean_var).pack(side=tk.LEFT)
+        ttk.Checkbutton(metrics_frame, text="Cosine", variable=self.use_cosine_var).pack(side=tk.LEFT)
+        ttk.Checkbutton(metrics_frame, text="Manhattan", variable=self.use_manhattan_var).pack(side=tk.LEFT)
+
         ttk.Button(compute_frame, text="Compute Dissonance", command=self.compute_dissonance).pack(fill=tk.X, pady=2)
 
         self.progress_var = tk.DoubleVar(value=0)
@@ -140,14 +157,15 @@ class NeighborDissonanceGUI:
         view_frame.pack(fill=tk.X, pady=5)
 
         self.view_mode = tk.StringVar(value="video")
-        ttk.Radiobutton(view_frame, text="Video Frame", variable=self.view_mode,
+        self.view_buttons_frame = ttk.Frame(view_frame)
+        self.view_buttons_frame.pack(fill=tk.X)
+
+        # Video frame is always available
+        ttk.Radiobutton(self.view_buttons_frame, text="Video Frame", variable=self.view_mode,
                        value="video", command=self.update_display).pack(anchor=tk.W)
-        ttk.Radiobutton(view_frame, text="DTW Heatmap", variable=self.view_mode,
-                       value="heatmap_dtw", command=self.update_display).pack(anchor=tk.W)
-        ttk.Radiobutton(view_frame, text="Euclidean Heatmap", variable=self.view_mode,
-                       value="heatmap_euc", command=self.update_display).pack(anchor=tk.W)
-        ttk.Radiobutton(view_frame, text="Side-by-Side", variable=self.view_mode,
-                       value="sidebyside", command=self.update_display).pack(anchor=tk.W)
+
+        # Heatmap options will be added dynamically after computation
+        self.heatmap_radios = []
 
         self.show_swaps_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(view_frame, text="Show swap markers",
@@ -203,12 +221,13 @@ class NeighborDissonanceGUI:
             self.precompute_series()
 
             # Reset state
-            self.dissonance_dtw = None
-            self.dissonance_euc = None
+            self.dissonance_maps = {}
+            self.active_metrics = []
             self.swapped_positions = set()
             self.swap_pairs = []
             self.comparison_positions = set()
             self.selected_position = None
+            self._update_view_options()
 
             # Update frame slider
             self.frame_slider.config(to=self.wall.num_frames - 1)
@@ -302,8 +321,9 @@ class NeighborDissonanceGUI:
         self.swapped_positions = set()
         self.swap_pairs = []
         self.comparison_positions = set()
-        self.dissonance_dtw = None
-        self.dissonance_euc = None
+        self.dissonance_maps = {}
+        self.active_metrics = []
+        self._update_view_options()
 
         self.update_swap_info()
         self.update_display()
@@ -339,10 +359,22 @@ class NeighborDissonanceGUI:
         try:
             self.wall.save_video(filepath, fps=30)
             self.root.after(0, lambda: self.status_label.config(text=f"Saved: {filepath}"))
-            self.root.after(0, lambda: messagebox.showinfo("Success", f"Video saved to:\n{filepath}"))
+            self.root.after(0, lambda: self._open_saved_video(filepath))
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to save video: {e}"))
             self.root.after(0, lambda: self.status_label.config(text="Save failed"))
+
+    def _open_saved_video(self, filepath):
+        """Open the saved video with the default system player."""
+        try:
+            if sys.platform == 'win32':
+                os.startfile(filepath)
+            elif sys.platform == 'darwin':
+                subprocess.run(['open', filepath], check=True)
+            else:
+                subprocess.run(['xdg-open', filepath], check=True)
+        except Exception as e:
+            messagebox.showwarning("Warning", f"Video saved but couldn't open automatically:\n{e}")
 
     def update_swap_info(self):
         """Update the swap info label."""
@@ -360,14 +392,29 @@ class NeighborDissonanceGUI:
             messagebox.showwarning("Warning", "Load a video first")
             return
 
+        # Get selected metrics
+        selected_metrics = []
+        if self.use_dtw_var.get():
+            selected_metrics.append('dtw')
+        if self.use_euclidean_var.get():
+            selected_metrics.append('euclidean')
+        if self.use_cosine_var.get():
+            selected_metrics.append('cosine')
+        if self.use_manhattan_var.get():
+            selected_metrics.append('manhattan')
+
+        if not selected_metrics:
+            messagebox.showwarning("Warning", "Select at least one distance metric")
+            return
+
         self.status_label.config(text="Computing dissonance...")
         self.progress_var.set(0)
 
         # Run in background thread
-        thread = threading.Thread(target=self._compute_dissonance_worker)
+        thread = threading.Thread(target=self._compute_dissonance_worker, args=(selected_metrics,))
         thread.start()
 
-    def _compute_dissonance_worker(self):
+    def _compute_dissonance_worker(self, selected_metrics):
         """Background worker to compute dissonance for selected positions only."""
         try:
             height, width = self.wall.height, self.wall.width
@@ -405,26 +452,25 @@ class NeighborDissonanceGUI:
             else:
                 self.comparison_positions = set()
 
-            # Initialize dissonance arrays with NaN (uncomputed)
-            dissonance_dtw = np.full((height, width), np.nan)
-            dissonance_euc = np.full((height, width), np.nan)
+            # Initialize dissonance arrays for each metric
+            dissonance_maps = {}
+            for metric in selected_metrics:
+                dissonance_maps[metric] = np.full((height, width), np.nan)
 
             total = len(positions_to_compute)
             for i, (x, y) in enumerate(positions_to_compute):
-                # Compute both metrics using TVWall methods
-                dissonance_dtw[y, x] = self.wall.compute_position_dissonance(
-                    x, y, current_series, kernel_size, 'dtw', window
-                )
-                dissonance_euc[y, x] = self.wall.compute_position_dissonance(
-                    x, y, current_series, kernel_size, 'euclidean', window
-                )
+                # Compute each selected metric
+                for metric in selected_metrics:
+                    dissonance_maps[metric][y, x] = self.wall.compute_position_dissonance(
+                        x, y, current_series, kernel_size, metric, window
+                    )
 
                 # Update progress
                 progress = (i + 1) / total * 100
                 self.root.after(0, lambda p=progress: self.progress_var.set(p))
 
-            self.dissonance_dtw = dissonance_dtw
-            self.dissonance_euc = dissonance_euc
+            self.dissonance_maps = dissonance_maps
+            self.active_metrics = selected_metrics
 
             # Update UI on main thread
             self.root.after(0, self._on_dissonance_complete)
@@ -438,13 +484,55 @@ class NeighborDissonanceGUI:
         self.status_label.config(text="Dissonance computed")
         self.progress_var.set(100)
 
+        # Update view options based on computed metrics
+        self._update_view_options()
+
         # Analyze results
         self.analyze_results()
         self.update_display()
 
+    def _update_view_options(self):
+        """Update the view radio buttons based on computed metrics."""
+        # Remove old heatmap radio buttons
+        for radio in self.heatmap_radios:
+            radio.destroy()
+        self.heatmap_radios = []
+
+        # Add radio buttons for each computed metric
+        metric_labels = {
+            'dtw': 'DTW',
+            'euclidean': 'Euclidean',
+            'cosine': 'Cosine',
+            'manhattan': 'Manhattan'
+        }
+
+        for metric in self.active_metrics:
+            label = f"{metric_labels.get(metric, metric)} Heatmap"
+            radio = ttk.Radiobutton(
+                self.view_buttons_frame,
+                text=label,
+                variable=self.view_mode,
+                value=f"heatmap_{metric}",
+                command=self.update_display
+            )
+            radio.pack(anchor=tk.W)
+            self.heatmap_radios.append(radio)
+
+        # Add side-by-side option if multiple metrics
+        if len(self.active_metrics) >= 2:
+            radio = ttk.Radiobutton(
+                self.view_buttons_frame,
+                text="Side-by-Side",
+                variable=self.view_mode,
+                value="sidebyside",
+                command=self.update_display
+            )
+            radio.pack(anchor=tk.W)
+            self.heatmap_radios.append(radio)
+
     def analyze_results(self):
-        """Analyze and display results for both DTW and Euclidean."""
-        if self.dissonance_dtw is None:
+        """Analyze and display results for all computed metrics."""
+        if not self.dissonance_maps:
             return
 
         self.results_text.delete(1.0, tk.END)
@@ -452,17 +540,27 @@ class NeighborDissonanceGUI:
         # Calculate number of neighbors for current kernel
         n_neighbors = self.current_kernel_size ** 2 - 1
 
+        metric_labels = {
+            'dtw': 'DTW',
+            'euclidean': 'EUCLIDEAN',
+            'cosine': 'COSINE',
+            'manhattan': 'MANHATTAN'
+        }
+
         results = []
         results.append("=" * 35)
-        results.append("  DTW vs EUCLIDEAN COMPARISON")
+        results.append("    DISTANCE METRIC COMPARISON")
         results.append("=" * 35)
         results.append(f"Kernel: {self.current_kernel_size}x{self.current_kernel_size} ({n_neighbors} neighbors)")
         results.append(f"Swapped: {len(self.swapped_positions)}")
         results.append(f"Comparison: {len(self.comparison_positions)}")
         results.append("")
 
-        # Analyze both metrics
-        for metric_name, dissonance in [("DTW", self.dissonance_dtw), ("EUCLIDEAN", self.dissonance_euc)]:
+        # Analyze each computed metric
+        for metric in self.active_metrics:
+            dissonance = self.dissonance_maps[metric]
+            metric_name = metric_labels.get(metric, metric.upper())
+
             swapped_d = []
             comparison_d = []
 
@@ -487,7 +585,7 @@ class NeighborDissonanceGUI:
 
                 if comparison_d.std() > 0:
                     separation = (swapped_d.mean() - comparison_d.mean()) / comparison_d.std()
-                    results.append(f"Z-score: {separation:.2f}", )
+                    results.append(f"Z-score: {separation:.2f}")
                     if separation > 2:
                         results.append("  -> STRONG")
                     elif separation > 1:
@@ -523,10 +621,10 @@ class NeighborDissonanceGUI:
 
         if mode == "video":
             img = self.wall.get_frame_image(self.current_frame)
-        elif mode == "heatmap_dtw":
-            img = self.get_heatmap_image(self.dissonance_dtw)
-        elif mode == "heatmap_euc":
-            img = self.get_heatmap_image(self.dissonance_euc)
+        elif mode.startswith("heatmap_"):
+            metric = mode.replace("heatmap_", "")
+            dissonance = self.dissonance_maps.get(metric)
+            img = self.get_heatmap_image(dissonance)
         elif mode == "sidebyside":
             img = self.get_sidebyside_image()
         else:
@@ -595,27 +693,31 @@ class NeighborDissonanceGUI:
         return Image.fromarray(rgb, 'RGB')
 
     def get_sidebyside_image(self):
-        """Create side-by-side DTW and Euclidean heatmaps."""
-        dtw_img = self.get_heatmap_image(self.dissonance_dtw)
-        euc_img = self.get_heatmap_image(self.dissonance_euc)
+        """Create side-by-side heatmaps for all computed metrics."""
+        if not self.active_metrics:
+            return Image.new('RGB', (self.wall.width, self.wall.height), (50, 50, 50))
 
-        # Combine side by side
-        combined = Image.new('RGB', (self.wall.width * 2, self.wall.height), (50, 50, 50))
-        combined.paste(dtw_img, (0, 0))
-        combined.paste(euc_img, (self.wall.width, 0))
+        num_metrics = len(self.active_metrics)
+        combined = Image.new('RGB', (self.wall.width * num_metrics, self.wall.height), (50, 50, 50))
+
+        for i, metric in enumerate(self.active_metrics):
+            dissonance = self.dissonance_maps.get(metric)
+            img = self.get_heatmap_image(dissonance)
+            combined.paste(img, (self.wall.width * i, 0))
 
         return combined
 
 
     def draw_swap_markers(self, img, sidebyside=False):
         """Draw markers on swapped and comparison positions."""
-        from PIL import ImageDraw, ImageFont
+        from PIL import ImageDraw
 
         img = img.copy()
         draw = ImageDraw.Draw(img)
 
         scale = self.display_scale
-        offsets = [0] if not sidebyside else [0, self.wall.width * scale]
+        num_panels = len(self.active_metrics) if sidebyside else 1
+        offsets = [i * self.wall.width * scale for i in range(num_panels)]
 
         for offset in offsets:
             # Draw comparison positions (blue squares)
@@ -641,10 +743,18 @@ class NeighborDissonanceGUI:
                 draw.line([x1, y1, x2, y2], fill='cyan', width=1)
 
         # Add labels for side-by-side view
-        if sidebyside:
+        if sidebyside and self.active_metrics:
+            metric_labels = {
+                'dtw': 'DTW',
+                'euclidean': 'Euclidean',
+                'cosine': 'Cosine',
+                'manhattan': 'Manhattan'
+            }
             try:
-                draw.text((5, 5), "DTW", fill='white')
-                draw.text((int(self.wall.width * scale) + 5, 5), "Euclidean", fill='white')
+                for i, metric in enumerate(self.active_metrics):
+                    label = metric_labels.get(metric, metric)
+                    x_pos = int(i * self.wall.width * scale) + 5
+                    draw.text((x_pos, 5), label, fill='white')
             except Exception:
                 pass  # Font issues on some systems
 
@@ -710,10 +820,11 @@ class NeighborDissonanceGUI:
             info += f" [originally ({orig_x}, {orig_y})]"
 
         # Show dissonance if computed
-        if self.dissonance_dtw is not None and not np.isnan(self.dissonance_dtw[y, x]):
-            info += f" | DTW: {self.dissonance_dtw[y, x]:.1f}"
-        if self.dissonance_euc is not None and not np.isnan(self.dissonance_euc[y, x]):
-            info += f" | Euc: {self.dissonance_euc[y, x]:.1f}"
+        metric_short = {'dtw': 'DTW', 'euclidean': 'Euc', 'cosine': 'Cos', 'manhattan': 'Man'}
+        for metric, dissonance in self.dissonance_maps.items():
+            if not np.isnan(dissonance[y, x]):
+                label = metric_short.get(metric, metric[:3])
+                info += f" | {label}: {dissonance[y, x]:.1f}"
 
         self.position_label.config(text=info)
 
