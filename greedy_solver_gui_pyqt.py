@@ -84,6 +84,25 @@ class MetricsGraphWidget(QWidget):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
+        # Fancy iteration counter
+        self.iteration_label = QLabel("Iteration: —")
+        self.iteration_label.setAlignment(Qt.AlignCenter)
+        self.iteration_label.setStyleSheet("""
+            QLabel {
+                font-size: 28px;
+                font-weight: bold;
+                font-family: 'Georgia', 'Times New Roman', serif;
+                color: #d63384;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #ffe4ec, stop:0.5 #fff0f5, stop:1 #ffe4ec);
+                border: 2px solid #ffb6c1;
+                border-radius: 12px;
+                padding: 8px 16px;
+                margin: 5px;
+            }
+        """)
+        layout.addWidget(self.iteration_label)
+
         # Create matplotlib figures with pink theme
         self.fig_dissonance = Figure(figsize=(3, 2.5), dpi=80, facecolor='#fff0f5')
         self.ax_dissonance = self.fig_dissonance.add_subplot(111)
@@ -154,6 +173,13 @@ class MetricsGraphWidget(QWidget):
         self.canvas_dissonance.draw()
         self.canvas_correct.draw()
         self.canvas_accuracy.draw()
+
+    def update_iteration(self, iteration):
+        """Update the iteration counter display."""
+        if iteration == 0:
+            self.iteration_label.setText("Iteration: —")
+        else:
+            self.iteration_label.setText(f"Iteration: {iteration:,}")
 
     def update_graphs(self, dissonance_history, correct_history, total_positions):
         """Update all graphs with new data."""
@@ -240,6 +266,7 @@ class MetricsGraphWidget(QWidget):
     def clear_graphs(self):
         """Clear all graph data."""
         self._init_empty_plots()
+        self.iteration_label.setText("Iteration: —")
 
 
 class GreedySolverGUI(QMainWindow):
@@ -987,8 +1014,9 @@ class GreedySolverGUI(QMainWindow):
         lines.append("=" * 38)
         self.results_text.setPlainText("\n".join(lines))
 
-        # Update live graphs
+        # Update live graphs and iteration counter
         if self.wall is not None:
+            self.metrics_graphs.update_iteration(self.iteration)
             self.metrics_graphs.update_graphs(
                 self.total_dissonance_history,
                 self.correct_count_history,
