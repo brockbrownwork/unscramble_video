@@ -268,7 +268,7 @@ class GreedySolverGUI(QMainWindow):
         topk_label = QLabel("Top-K:")
         topk_label.setFixedWidth(70)
         topk_row.addWidget(topk_label)
-        self.topk_edit = QLineEdit("5")
+        self.topk_edit = QLineEdit("100")
         self.topk_edit.setFixedWidth(70)
         topk_row.addWidget(self.topk_edit)
         topk_hint = QLabel("(for strategies)")
@@ -1245,10 +1245,9 @@ class GreedySolverGUI(QMainWindow):
         dx /= length
         dy /= length
 
-        # Offset to keep line and arrows outside the pixel boundaries
-        # Use half pixel size plus margin to clear the pixels completely
+        # Offset to keep arrows just outside the pixel boundaries
         arrow_size = 8
-        pixel_offset = scale * 0.7 + arrow_size  # Extra space for arrowheads
+        pixel_offset = scale * 0.5 + 2  # Half pixel size + small margin
 
         start_x = cx1 + dx * pixel_offset
         start_y = cy1 + dy * pixel_offset
