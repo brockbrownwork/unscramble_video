@@ -2,16 +2,33 @@
 
 ## Project Overview
 
-**unscramble_video** is an experimental video analysis and visualization tool that reconstructs scrambled video frames by analyzing pixel color sequences over time using UMAP dimensionality reduction.
+**unscramble_video** is an experimental tool that reconstructs scrambled video frames by analyzing pixel color sequences over time.
 
-This project is based on a thought problem. Consider that you have a gigantic wall of CRT TVs stacked in a 2d array. Each TV is only capable of displaying one color on its screen at any given moment. You can play a video back on the TV wall where each TV is a pixel position of the video. If you knock down the wall of TVs, can you figure out where the TVs go again? And what kinds of videos can you use that will work for putting the TVs back in their proper place? For example, if the video is just 30 seconds of white and black blinking it would be impossible to figure out where they go. The idea is that TVs with similar color series will have strong tendencies to belong next to each other as long as the video is rich in color variety.
+### The Thought Experiment
 
-The thought was based on neuroscience originally. There was an experiment where they rewired ferrets' ocular nerve to the auditory cortex and vise-versa and they were still able to learn how to see. Therefore, the positions of "pixels" in animal visual fields is learned and not hard coded. A similar experiment was done with deafferentation in macaques by Edward Taub. It's based on the notion of topological tendencies in the brain; if you tap the index finger, and tap the ring finger, the region that lights up when the middle finger is tapped will live between the index and ring finger regions that light up. If you rewire the nerve from one finger to another, this topological tendency will be relearned.
+Imagine a giant wall of CRT TVs arranged in a 2D grid, where each TV displays only one color at a time - essentially acting as a single pixel. When you play a video, each TV shows the color sequence for its corresponding pixel position.
+
+Now knock down the wall and scatter the TVs. Can you figure out where each TV belongs?
+
+The key insight: **neighboring pixels in a video tend to have similar color sequences over time.** If the video has rich color variety (not just black/white blinking), TVs that belong next to each other will have correlated color histories. This correlation is what we exploit to solve the puzzle.
+
+### Neuroscience Inspiration
+
+This project is inspired by neural plasticity research:
+
+- **Ferret rewiring experiments**: When scientists rewired ferrets' optic nerves to the auditory cortex (and vice versa), the animals still learned to see. This shows that "pixel positions" in the visual field are *learned*, not hardcoded.
+
+- **Topological organization**: In the brain, neurons that respond to adjacent body parts are physically adjacent (somatotopy). If you tap your index finger, then your ring finger, the neural region responding to your middle finger will be *between* them. This topological tendency is preserved even after nerve rewiring.
+
+The unscramble problem is analogous: we're trying to recover spatial topology from temporal correlation alone.
 
 ## Tech Stack
 
 - **Language:** Python
-- **Core Libraries:** opencv-python, numpy, umap-learn, matplotlib, Pillow, tqdm, fastdtw, scipy
+- **Core Libraries:** opencv-python, numpy, umap-learn, matplotlib, Pillow, tqdm, scipy
+- **Distance Metrics:** aeon (DTW pairwise distances)
+- **ML/Evaluation:** scikit-learn (precision-recall, ROC curves)
+- **GUI:** tkinter (interactive experiments)
 - **External Tools:** ffmpeg (via subprocess)
 - **Development:** Jupyter Notebooks for experimentation
 
@@ -19,15 +36,19 @@ The thought was based on neuroscience originally. There was an experiment where 
 
 ```
 unscramble_video/
-├── tv_wall.py             # TVWall class - core abstraction for TV wall simulation
-├── unscramble.py          # Main script (Euclidean distance)
-├── unscramble_dtw.py      # DTW experiment (Dynamic Time Warping distance)
+├── tv_wall.py                         # TVWall class - core abstraction
+├── neighbor_dissonance_gui.py         # Interactive dissonance visualization
+├── greedy_solver_gui.py               # Interactive solver with multiple strategies
+├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
+├── test_tv_wall.py                    # Unit tests for TVWall
+├── unscramble.py                      # Original UMAP approach (Euclidean)
+├── unscramble_dtw.py                  # DTW-based UMAP approach
 ├── videos/
-│   └── stitch.py          # Video concatenation utility
-├── *.ipynb                # Experimental notebooks
-├── *.mkv                  # Input video files
-├── *.gif                  # Output animations
-└── *.npy                  # Cached numpy arrays
+│   └── stitch.py                      # Video concatenation utility
+├── *.ipynb                            # Experimental notebooks
+├── *.mkv                              # Input video files
+├── *.gif                              # Output animations
+└── *.npy                              # Cached numpy arrays
 ```
 
 ## Commands
@@ -35,11 +56,17 @@ unscramble_video/
 ```bash
 # Install dependencies
 pip install -r requirements.txt
+pip install aeon scikit-learn  # Additional deps for experiments
 
-# Run main script (Euclidean distance)
+# Run interactive GUIs
+python neighbor_dissonance_gui.py  # Visualize dissonance heatmaps
+python greedy_solver_gui.py        # Run solver with animation
+
+# Run CLI experiment
+python experiment_neighbor_dissonance.py -v video.mkv -n 20 -f 100
+
+# Run original UMAP scripts
 python unscramble.py
-
-# Run DTW experiment (slower but captures temporal shifts)
 python unscramble_dtw.py
 
 # Stitch videos
@@ -49,10 +76,11 @@ cd videos && python stitch.py
 ## Key Concepts
 
 - **TVs**: Pixel color time-series (each pixel position across all frames)
-- **TVWall**: Class representing the wall of TVs; handles video loading, position swapping, and frame/video export
+- **TVWall**: Class representing the wall of TVs; handles video loading, position swapping, dissonance computation, and frame/video export
+- **Neighbor Dissonance**: For each position, the average distance to its 8 neighbors. High dissonance = likely misplaced
 - **Pipeline**: Video → frames → TVs → UMAP embedding → RGB visualization → animation
-- **DTW (Dynamic Time Warping)**: Distance metric that accounts for time-shifts between sequences, useful when edges/objects move across adjacent pixels
-- **Stride**: Frame skip interval for capturing longer-term temporal patterns without increasing computation
+- **DTW (Dynamic Time Warping)**: Distance metric that accounts for time-shifts between sequences
+- **Stride**: Frame skip interval for capturing longer-term temporal patterns
 
 ## DTW Pairwise Distance
 
@@ -63,7 +91,6 @@ from aeon.distances import dtw_pairwise_distance
 import numpy as np
 
 # Get color series for multiple TVs - shape: (n_tvs, n_channels, n_frames)
-# Each TV has 3 channels (RGB) and n_frames timepoints
 tv_series = np.array([
     wall.get_tv_color_series(x1, y1).T,  # shape: (3, n_frames)
     wall.get_tv_color_series(x2, y2).T,
@@ -78,23 +105,20 @@ distances = dtw_pairwise_distance(tv_series, window=0.1)
 
 # Parallel computation
 distances = dtw_pairwise_distance(tv_series, n_jobs=-1)
-
-# Distance between one TV and all others
-single_tv = wall.get_tv_color_series(x, y).T  # shape: (3, n_frames)
-distances_to_one = dtw_pairwise_distance(tv_series, single_tv)  # shape: (n_tvs, 1)
 ```
 
 **Parameters:**
 - `X`: Array of shape `(n_cases, n_channels, n_timepoints)` for multivariate series
 - `y`: Optional second collection to compare against
-- `window`: Sakoe-Chiba band as fraction of series length (0.0-1.0), limits warping
+- `window`: Sakoe-Chiba band as fraction of series length (0.0-1.0)
 - `n_jobs`: Parallel jobs (-1 for all cores)
 
 ## TVWall Class
 
-The `TVWall` class (`tv_wall.py`) is the core abstraction for simulating the TV wall. It loads a video and tracks which TV is at which position via a swap mapping.
+The `TVWall` class (`tv_wall.py`) is the core abstraction for simulating the TV wall. It loads a video and tracks which TV is at which position via a permutation mapping.
 
-**Usage:**
+### Basic Usage
+
 ```python
 from tv_wall import TVWall
 
@@ -103,9 +127,6 @@ wall = TVWall("video.mkv", num_frames=100, stride=2)
 
 # Scramble all TVs randomly
 wall.scramble(seed=42)
-
-# Or scramble a subset of positions
-wall.random_swaps(num_positions=50, seed=42)
 
 # Get color time-series for a TV at original position
 colors = wall.get_tv_color_series(x, y)  # shape: (num_frames, 3)
@@ -121,14 +142,138 @@ wall.save_video("scrambled.mp4", fps=30)
 wall.reset_swaps()
 ```
 
-**Key Methods:**
-- `scramble(seed)` - Randomly shuffle all TV positions
-- `random_swaps(num_positions, seed)` - Shuffle a subset of positions
-- `swap(orig_pos, new_pos)` - Move a single TV to a new position
-- `swap_positions(pos1, pos2)` - Swap two TVs with each other
-- `get_tv_color_series(x, y)` - Get RGB time-series for a TV
-- `get_frame_image(timestep)` - Get PIL Image at a timestep
-- `save_video(path, fps)` - Export video via ffmpeg
+### Swap Methods
+
+```python
+# Randomly shuffle all positions
+wall.scramble(seed=42)
+
+# Shuffle a subset of positions (random global swaps)
+wall.random_swaps(num_positions=50, seed=42)
+
+# Swap pairs with unlimited distance (returns list of swap pairs)
+pairs = wall.pair_swaps(num_swaps=10, seed=42)
+
+# Swap pairs within a max distance (for testing local algorithms)
+pairs = wall.short_swaps(num_swaps=10, max_dist=5, seed=42)
+
+# Swap two specific positions
+wall.swap_positions((x1, y1), (x2, y2))
+
+# Place TV from orig_pos into new_pos (overwrites)
+wall.swap(orig_pos=(0, 0), new_pos=(5, 5))
+```
+
+### Dissonance Methods
+
+```python
+# Get all color series with current permutation
+all_series = wall.get_all_series()  # shape: (height, width, 3, num_frames)
+
+# Compute dissonance for a single position
+d = wall.compute_position_dissonance(x, y, all_series, kernel_size=3,
+                                      distance_metric='dtw', window=0.1)
+
+# Compute dissonance map for all positions
+dmap = wall.compute_dissonance_map(all_series, kernel_size=3,
+                                    distance_metric='dtw', window=0.1)
+
+# Compute total dissonance (sum over positions)
+total = wall.compute_total_dissonance(all_series, positions=[(x1,y1), (x2,y2)])
+
+# Get neighbor positions for a coordinate
+neighbors = wall.get_neighbors(x, y, kernel_size=3)  # 8 neighbors for 3x3
+```
+
+### Position Tracking
+
+```python
+# Get original position of TV currently at (x, y)
+orig_x, orig_y = wall.get_original_position(x, y)
+
+# Get current position of TV originally at (orig_x, orig_y)
+cur_x, cur_y = wall.get_current_position(orig_x, orig_y)
+
+# Count of misplaced TVs
+print(wall.num_swapped)
+```
+
+## Neighbor Dissonance
+
+The core metric for detecting misplaced TVs. For each TV position, we measure how similar its color time-series is to its neighbors. The `kernel_size` parameter controls how many neighbors to consider:
+
+```
+kernel_size=3 (8 neighbors)       kernel_size=5 (24 neighbors)
+
+    +---+---+---+                 +---+---+---+---+---+
+    | N | N | N |                 | N | N | N | N | N |
+    +---+---+---+                 +---+---+---+---+---+
+    | N | X | N |                 | N | N | N | N | N |
+    +---+---+---+                 +---+---+---+---+---+
+    | N | N | N |                 | N | N | X | N | N |
+    +---+---+---+                 +---+---+---+---+---+
+                                  | N | N | N | N | N |
+X = center position               +---+---+---+---+---+
+N = neighbor (compared to X)      | N | N | N | N | N |
+                                  +---+---+---+---+---+
+```
+
+**Dissonance formula:**
+```
+dissonance(X) = mean( distance(X, neighbor) for each neighbor N )
+```
+
+- **Low dissonance**: TV fits well with neighbors (likely in correct position)
+- **High dissonance**: TV is dissimilar to neighbors (likely misplaced, candidate for swapping)
+
+## Solving Strategies
+
+The `greedy_solver_gui.py` implements three strategies:
+
+1. **Highest Dissonance**: Find the highest dissonance position, try swapping with each neighbor, keep the best improvement
+
+2. **Best of Top-K**: Consider top-K highest dissonance positions, try all pairwise swaps among them, keep the best improvement
+
+3. **Simulated Annealing**: Randomly swap among top-K candidates, accept worse moves probabilistically based on temperature (decays over iterations)
+
+## GUI Tools
+
+### Neighbor Dissonance GUI (`neighbor_dissonance_gui.py`)
+
+Interactive tool for visualizing dissonance:
+- Load video and set parameters (frames, stride, kernel size)
+- Perform random swaps or short-distance swaps
+- Compute DTW and Euclidean dissonance side-by-side
+- View heatmaps with swap markers
+- Compare dissonance distributions between swapped and non-swapped positions
+
+### Greedy Solver GUI (`greedy_solver_gui.py`)
+
+Interactive solver with real-time animation:
+- Load video, scramble, then watch the solver unscramble
+- Compare strategies: greedy, best-of-top-K, simulated annealing
+- Tune parameters: top-K, max iterations, temperature, cooling rate
+- Run batch experiments across multiple scramble levels
+- View progress charts and correctness maps
+
+## CLI Experiment (`experiment_neighbor_dissonance.py`)
+
+Command-line tool for systematic evaluation:
+
+```bash
+python experiment_neighbor_dissonance.py \
+    -v cab_ride_trimmed.mkv \
+    -f 100 -s 30 \
+    -n 20 \
+    -m dtw \
+    -w 0.1
+
+# Outputs:
+# - Precision-Recall curve
+# - ROC curve with AUC
+# - Dissonance heatmap overlay
+# - Statistics (separation z-score, top-K recall)
+```
 
 ## Coding Conventions
 
@@ -143,35 +288,12 @@ wall.reset_swaps()
 - Commit prefixes: `feat:`, `chore:`, `fix:`, `docs:`
 - Keep notebooks and generated media out of git (see .gitignore)
 
-## Unscrambling Approach
-
-### Neighbor Dissonance
-
-The core metric for detecting misplaced TVs. For each position, compute the average DTW distance to its 8 neighbors using a 3x3 kernel:
-
-```
-+---+---+---+
-| ↖ | ↑ | ↗ |
-+---+---+---+
-| ← | X | → |   neighbor_dissonance(X) = sum(DTW(X, neighbor)) / num_neighbors
-+---+---+---+
-| ↙ | ↓ | ↘ |
-+---+---+---+
-```
-
-High dissonance indicates a TV that doesn't belong with its neighbors - a candidate for being swapped.
-
-### Incremental Solving Strategy
-
-1. Start with the video in correct configuration
-2. Swap 2 TVs, then solve
-3. Double the number of swapped TVs each iteration until hitting a roadblock
-4. Use neighbor dissonance to identify swap candidates
-
-The main challenge is the combinatorial explosion of permutations among swap candidates. A* search may help, using neighbor dissonance as the cost heuristic to prune the search tree.
-
 ## Ideas
 
 - **Scramble threshold experiment**: Start with correct video, randomize N positions, solve, then increase N until the solver breaks down. Find the critical threshold.
 
 - **Distance metric comparison**: Compare Euclidean vs DTW correlation with actual TV distance to validate DTW as the better metric.
+
+- **A* search**: Use neighbor dissonance as a heuristic cost function to prune the combinatorial search space of possible swaps.
+
+- **Hierarchical solving**: Solve at low resolution first (pooled pixels), then refine at higher resolution.
