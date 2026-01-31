@@ -25,10 +25,15 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QLineEdit, QComboBox, QGroupBox, QTextEdit,
     QRadioButton, QButtonGroup, QSlider, QProgressBar, QFileDialog,
-    QMessageBox, QFrame, QSizePolicy, QScrollArea
+    QMessageBox, QFrame, QSizePolicy, QScrollArea, QSplitter
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor
+
+import matplotlib
+matplotlib.use('Qt5Agg')
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 from tv_wall import TVWall
 
@@ -61,11 +66,187 @@ class ImageCanvas(QLabel):
         super().mouseMoveEvent(event)
 
 
+class MetricsGraphWidget(QWidget):
+    """Widget containing live-updating matplotlib graphs for solver metrics."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(10)
+
+        # Title
+        title = QLabel("Live Metrics")
+        title.setStyleSheet("font-size: 14px; font-weight: bold; color: #d63384;")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        # Create matplotlib figures with pink theme
+        self.fig_dissonance = Figure(figsize=(3, 2.5), dpi=80, facecolor='#fff0f5')
+        self.ax_dissonance = self.fig_dissonance.add_subplot(111)
+        self.canvas_dissonance = FigureCanvas(self.fig_dissonance)
+        self.canvas_dissonance.setMinimumHeight(180)
+
+        self.fig_correct = Figure(figsize=(3, 2.5), dpi=80, facecolor='#fff0f5')
+        self.ax_correct = self.fig_correct.add_subplot(111)
+        self.canvas_correct = FigureCanvas(self.fig_correct)
+        self.canvas_correct.setMinimumHeight(180)
+
+        self.fig_accuracy = Figure(figsize=(3, 2.5), dpi=80, facecolor='#fff0f5')
+        self.ax_accuracy = self.fig_accuracy.add_subplot(111)
+        self.canvas_accuracy = FigureCanvas(self.fig_accuracy)
+        self.canvas_accuracy.setMinimumHeight(180)
+
+        # Style the axes
+        for ax in [self.ax_dissonance, self.ax_correct, self.ax_accuracy]:
+            ax.set_facecolor('#ffe4ec')
+            ax.tick_params(colors='#8b4563', labelsize=8)
+            ax.spines['bottom'].set_color('#ffb6c1')
+            ax.spines['top'].set_color('#ffb6c1')
+            ax.spines['left'].set_color('#ffb6c1')
+            ax.spines['right'].set_color('#ffb6c1')
+
+        # Dissonance graph group
+        diss_group = QGroupBox("Total Dissonance")
+        diss_layout = QVBoxLayout(diss_group)
+        diss_layout.setContentsMargins(5, 10, 5, 5)
+        diss_layout.addWidget(self.canvas_dissonance)
+        layout.addWidget(diss_group)
+
+        # Correct count graph group
+        correct_group = QGroupBox("Correct Positions")
+        correct_layout = QVBoxLayout(correct_group)
+        correct_layout.setContentsMargins(5, 10, 5, 5)
+        correct_layout.addWidget(self.canvas_correct)
+        layout.addWidget(correct_group)
+
+        # Accuracy percentage graph group
+        accuracy_group = QGroupBox("Accuracy %")
+        accuracy_layout = QVBoxLayout(accuracy_group)
+        accuracy_layout.setContentsMargins(5, 10, 5, 5)
+        accuracy_layout.addWidget(self.canvas_accuracy)
+        layout.addWidget(accuracy_group)
+
+        layout.addStretch()
+
+        # Initialize empty plots
+        self._init_empty_plots()
+
+    def _init_empty_plots(self):
+        """Initialize empty plots with placeholder text."""
+        for ax, title in [(self.ax_dissonance, 'Total Dissonance'),
+                          (self.ax_correct, 'Correct Positions'),
+                          (self.ax_accuracy, 'Accuracy %')]:
+            ax.clear()
+            ax.set_facecolor('#ffe4ec')
+            ax.text(0.5, 0.5, 'No data yet', ha='center', va='center',
+                    transform=ax.transAxes, color='#c97a94', fontsize=10)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        self.fig_dissonance.tight_layout()
+        self.fig_correct.tight_layout()
+        self.fig_accuracy.tight_layout()
+
+        self.canvas_dissonance.draw()
+        self.canvas_correct.draw()
+        self.canvas_accuracy.draw()
+
+    def update_graphs(self, dissonance_history, correct_history, total_positions):
+        """Update all graphs with new data."""
+        if not dissonance_history:
+            self._init_empty_plots()
+            return
+
+        iterations = list(range(len(dissonance_history)))
+
+        # Update dissonance graph
+        self.ax_dissonance.clear()
+        self.ax_dissonance.set_facecolor('#ffe4ec')
+        self.ax_dissonance.plot(iterations, dissonance_history, color='#ff85a2', linewidth=2)
+        self.ax_dissonance.fill_between(iterations, dissonance_history, alpha=0.3, color='#ffb6c1')
+        self.ax_dissonance.set_xlabel('Iteration', fontsize=8, color='#8b4563')
+        self.ax_dissonance.set_ylabel('Dissonance', fontsize=8, color='#8b4563')
+        self.ax_dissonance.tick_params(colors='#8b4563', labelsize=7)
+        if len(dissonance_history) > 1:
+            self.ax_dissonance.set_xlim(0, max(1, len(iterations) - 1))
+            # Set y-axis based on min/max with padding
+            d_min, d_max = min(dissonance_history), max(dissonance_history)
+            d_range = d_max - d_min if d_max > d_min else d_max * 0.1
+            padding = d_range * 0.1
+            self.ax_dissonance.set_ylim(d_min - padding, d_max + padding)
+        self._style_axis(self.ax_dissonance)
+        self.fig_dissonance.tight_layout()
+        self.canvas_dissonance.draw()
+
+        # Update correct count graph
+        if correct_history:
+            self.ax_correct.clear()
+            self.ax_correct.set_facecolor('#ffe4ec')
+            self.ax_correct.plot(iterations[:len(correct_history)], correct_history,
+                                color='#4caf50', linewidth=2)
+            self.ax_correct.fill_between(iterations[:len(correct_history)], correct_history,
+                                         alpha=0.3, color='#81c784')
+            self.ax_correct.axhline(y=total_positions, color='#8b4563', linestyle='--',
+                                    linewidth=1, alpha=0.5, label='Total')
+            self.ax_correct.set_xlabel('Iteration', fontsize=8, color='#8b4563')
+            self.ax_correct.set_ylabel('Count', fontsize=8, color='#8b4563')
+            self.ax_correct.tick_params(colors='#8b4563', labelsize=7)
+            if len(correct_history) > 1:
+                self.ax_correct.set_xlim(0, max(1, len(correct_history) - 1))
+                # Set y-axis based on min/max with padding
+                c_min, c_max = min(correct_history), max(correct_history)
+                c_range = c_max - c_min if c_max > c_min else c_max * 0.1
+                padding = c_range * 0.1
+                self.ax_correct.set_ylim(c_min - padding, c_max + padding)
+            self._style_axis(self.ax_correct)
+            self.fig_correct.tight_layout()
+            self.canvas_correct.draw()
+
+            # Update accuracy percentage graph
+            accuracy_history = [c / total_positions * 100 for c in correct_history]
+            self.ax_accuracy.clear()
+            self.ax_accuracy.set_facecolor('#ffe4ec')
+            self.ax_accuracy.plot(iterations[:len(accuracy_history)], accuracy_history,
+                                 color='#2196f3', linewidth=2)
+            self.ax_accuracy.fill_between(iterations[:len(accuracy_history)], accuracy_history,
+                                          alpha=0.3, color='#64b5f6')
+            self.ax_accuracy.axhline(y=100, color='#8b4563', linestyle='--',
+                                     linewidth=1, alpha=0.5)
+            self.ax_accuracy.set_xlabel('Iteration', fontsize=8, color='#8b4563')
+            self.ax_accuracy.set_ylabel('%', fontsize=8, color='#8b4563')
+            self.ax_accuracy.tick_params(colors='#8b4563', labelsize=7)
+            if len(accuracy_history) > 1:
+                self.ax_accuracy.set_xlim(0, max(1, len(accuracy_history) - 1))
+                # Set y-axis based on min/max with padding
+                a_min, a_max = min(accuracy_history), max(accuracy_history)
+                a_range = a_max - a_min if a_max > a_min else a_max * 0.1
+                padding = a_range * 0.1
+                self.ax_accuracy.set_ylim(a_min - padding, min(100, a_max + padding))
+            self._style_axis(self.ax_accuracy)
+            self.fig_accuracy.tight_layout()
+            self.canvas_accuracy.draw()
+
+    def _style_axis(self, ax):
+        """Apply pink theme styling to axis."""
+        for spine in ax.spines.values():
+            spine.set_color('#ffb6c1')
+        ax.xaxis.label.set_color('#8b4563')
+        ax.yaxis.label.set_color('#8b4563')
+
+    def clear_graphs(self):
+        """Clear all graph data."""
+        self._init_empty_plots()
+
+
 class GreedySolverGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Greedy Solver - Unscramble Video")
-        self.setGeometry(100, 100, 1500, 950)
+        self.setGeometry(50, 50, 1800, 950)
 
         self.wall = None
         self.all_series = None
@@ -412,20 +593,31 @@ class GreedySolverGUI(QMainWindow):
         scroll_area.setWidget(left_panel)
         main_layout.addWidget(scroll_area)
 
-        # Right panel - canvas
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
+        # Center panel - canvas
+        center_panel = QWidget()
+        center_layout = QVBoxLayout(center_panel)
+        center_layout.setContentsMargins(0, 0, 0, 0)
 
         self.canvas = ImageCanvas()
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.canvas.mouse_moved.connect(self.on_canvas_motion)
-        right_layout.addWidget(self.canvas)
+        center_layout.addWidget(self.canvas)
 
         self.position_label = QLabel("Position: -")
-        right_layout.addWidget(self.position_label)
+        center_layout.addWidget(self.position_label)
 
-        main_layout.addWidget(right_panel, stretch=1)
+        main_layout.addWidget(center_panel, stretch=1)
+
+        # Right panel - live graphs sidebar
+        graphs_scroll = QScrollArea()
+        graphs_scroll.setWidgetResizable(True)
+        graphs_scroll.setFixedWidth(300)
+        graphs_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        self.metrics_graphs = MetricsGraphWidget()
+        graphs_scroll.setWidget(self.metrics_graphs)
+
+        main_layout.addWidget(graphs_scroll)
 
     def on_view_changed(self, checked):
         if checked:
@@ -519,6 +711,7 @@ class GreedySolverGUI(QMainWindow):
         self.show_pre_swap = False
         self.update_scramble_info()
         self.results_text.clear()
+        self.metrics_graphs.clear_graphs()
 
     def update_scramble_info(self):
         if self.wall is None:
@@ -793,6 +986,14 @@ class GreedySolverGUI(QMainWindow):
 
         lines.append("=" * 38)
         self.results_text.setPlainText("\n".join(lines))
+
+        # Update live graphs
+        if self.wall is not None:
+            self.metrics_graphs.update_graphs(
+                self.total_dissonance_history,
+                self.correct_count_history,
+                self.wall.num_tvs
+            )
 
     def start_solver(self):
         if self.wall is None:
