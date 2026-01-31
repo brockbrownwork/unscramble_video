@@ -290,6 +290,155 @@ class TVWall:
         identity_y, identity_x = np.mgrid[0:self.height, 0:self.width]
         return np.sum((self._perm_x != identity_x) | (self._perm_y != identity_y))
 
+    def get_neighbors(self, x, y, kernel_size=3):
+        """
+        Get valid neighbor positions for a given (x, y) coordinate.
+
+        Parameters:
+            x (int): X coordinate.
+            y (int): Y coordinate.
+            kernel_size (int): Size of the neighborhood kernel (default: 3).
+
+        Returns:
+            list: List of (x, y) tuples for valid neighbor positions.
+        """
+        neighbors = []
+        radius = kernel_size // 2
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < self.width and 0 <= ny < self.height:
+                    neighbors.append((nx, ny))
+        return neighbors
+
+    def get_all_series(self):
+        """
+        Get all TV color series with current swap configuration.
+
+        Returns:
+            np.ndarray: Array of shape (height, width, 3, num_frames) with color series
+                       for each position according to current permutation.
+        """
+        # Build series array using current permutation
+        series = np.zeros((self.height, self.width, 3, self.num_frames), dtype=np.float32)
+        for y in range(self.height):
+            for x in range(self.width):
+                orig_x, orig_y = self.get_original_position(x, y)
+                series[y, x] = self.get_tv_color_series(orig_x, orig_y).T
+        return series
+
+    def compute_position_dissonance(self, x, y, all_series=None, kernel_size=3,
+                                     distance_metric='dtw', window=0.1):
+        """
+        Compute neighbor dissonance for a single position.
+
+        Parameters:
+            x (int): X coordinate.
+            y (int): Y coordinate.
+            all_series (np.ndarray, optional): Precomputed series array from get_all_series().
+                                               If None, will compute on-the-fly.
+            kernel_size (int): Size of neighborhood kernel (default: 3).
+            distance_metric (str): Distance metric to use. Options:
+                - 'dtw': Dynamic Time Warping (default)
+                - 'euclidean': Euclidean distance
+                - 'squared': Squared Euclidean distance
+                See aeon.distances for more options.
+            window (float): Sakoe-Chiba band window for DTW (0.0-1.0).
+
+        Returns:
+            float: Mean distance to neighbors (dissonance).
+        """
+        neighbors = self.get_neighbors(x, y, kernel_size)
+        if not neighbors:
+            return 0.0
+
+        if all_series is None:
+            all_series = self.get_all_series()
+
+        center_series = all_series[y, x]
+        series_list = [center_series]
+        for nx, ny in neighbors:
+            series_list.append(all_series[ny, nx])
+
+        stacked = np.array(series_list)
+
+        if distance_metric == 'dtw':
+            from aeon.distances import dtw_pairwise_distance
+            distances = dtw_pairwise_distance(stacked, window=window)
+        elif distance_metric == 'euclidean':
+            from aeon.distances import euclidean_pairwise_distance
+            distances = euclidean_pairwise_distance(stacked)
+        elif distance_metric == 'squared':
+            from aeon.distances import squared_pairwise_distance
+            distances = squared_pairwise_distance(stacked)
+        else:
+            # Try to import the requested metric from aeon.distances
+            import aeon.distances as aeon_dist
+            pairwise_func = getattr(aeon_dist, f'{distance_metric}_pairwise_distance', None)
+            if pairwise_func is None:
+                raise ValueError(f"Unknown distance metric: {distance_metric}")
+            if distance_metric == 'dtw':
+                distances = pairwise_func(stacked, window=window)
+            else:
+                distances = pairwise_func(stacked)
+
+        return distances[0, 1:].mean()
+
+    def compute_total_dissonance(self, all_series=None, kernel_size=3,
+                                  distance_metric='dtw', window=0.1, positions=None):
+        """
+        Compute sum of dissonance over specified positions (or all if None).
+
+        Parameters:
+            all_series (np.ndarray, optional): Precomputed series array from get_all_series().
+            kernel_size (int): Size of neighborhood kernel (default: 3).
+            distance_metric (str): Distance metric to use ('dtw', 'euclidean', 'squared').
+            window (float): Sakoe-Chiba band window for DTW (0.0-1.0).
+            positions (list, optional): List of (x, y) positions to compute. If None, all positions.
+
+        Returns:
+            float: Total dissonance.
+        """
+        if all_series is None:
+            all_series = self.get_all_series()
+
+        if positions is None:
+            positions = [(x, y) for y in range(self.height) for x in range(self.width)]
+
+        total = 0.0
+        for x, y in positions:
+            total += self.compute_position_dissonance(
+                x, y, all_series, kernel_size, distance_metric, window
+            )
+        return total
+
+    def compute_dissonance_map(self, all_series=None, kernel_size=3,
+                                distance_metric='dtw', window=0.1):
+        """
+        Compute dissonance for all positions.
+
+        Parameters:
+            all_series (np.ndarray, optional): Precomputed series array from get_all_series().
+            kernel_size (int): Size of neighborhood kernel (default: 3).
+            distance_metric (str): Distance metric to use ('dtw', 'euclidean', 'squared').
+            window (float): Sakoe-Chiba band window for DTW (0.0-1.0).
+
+        Returns:
+            np.ndarray: Array of shape (height, width) with dissonance values.
+        """
+        if all_series is None:
+            all_series = self.get_all_series()
+
+        dissonance_map = np.zeros((self.height, self.width))
+        for y in range(self.height):
+            for x in range(self.width):
+                dissonance_map[y, x] = self.compute_position_dissonance(
+                    x, y, all_series, kernel_size, distance_metric, window
+                )
+        return dissonance_map
+
     def __repr__(self):
         return (f"TVWall(video='{self.video_path}', width={self.width}, "
                 f"height={self.height}, frames={self.num_frames}, "

@@ -19,54 +19,6 @@ from collections import deque
 
 from tv_wall import TVWall
 
-# Import distance functions from aeon
-from aeon.distances import dtw_pairwise_distance, euclidean_pairwise_distance
-
-
-def get_neighbors(x, y, width, height, kernel_size=3):
-    """Get valid neighbor positions for a given (x, y) coordinate.
-
-    Args:
-        x, y: Center position
-        width, height: Grid dimensions
-        kernel_size: Odd integer for kernel width (3 = 3x3, 5 = 5x5, etc.)
-    """
-    neighbors = []
-    radius = kernel_size // 2
-    for dx in range(-radius, radius + 1):
-        for dy in range(-radius, radius + 1):
-            if dx == 0 and dy == 0:
-                continue
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < width and 0 <= ny < height:
-                neighbors.append((nx, ny))
-    return neighbors
-
-
-def compute_neighbor_dissonance_at_position(wall, x, y, all_series, window=0.1, metric='dtw', kernel_size=3):
-    """Compute neighbor dissonance for a single position using specified metric."""
-    height, width = wall.height, wall.width
-    neighbors = get_neighbors(x, y, width, height, kernel_size)
-
-    if not neighbors:
-        return 0.0
-
-    center_series = all_series[y, x]
-
-    # Stack center + neighbors
-    series_list = [center_series]
-    for nx, ny in neighbors:
-        series_list.append(all_series[ny, nx])
-
-    stacked = np.array(series_list)  # (n+1, 3, n_frames)
-
-    if metric == 'dtw':
-        distances = dtw_pairwise_distance(stacked, window=window)
-    else:  # euclidean
-        distances = euclidean_pairwise_distance(stacked)
-
-    return distances[0, 1:].mean()
-
 
 class NeighborDissonanceGUI:
     def __init__(self, root):
@@ -509,12 +461,12 @@ class NeighborDissonanceGUI:
 
             total = len(positions_to_compute)
             for i, (x, y) in enumerate(positions_to_compute):
-                # Compute both metrics
-                dissonance_dtw[y, x] = compute_neighbor_dissonance_at_position(
-                    self.wall, x, y, current_series, window, metric='dtw', kernel_size=kernel_size
+                # Compute both metrics using TVWall methods
+                dissonance_dtw[y, x] = self.wall.compute_position_dissonance(
+                    x, y, current_series, kernel_size, 'dtw', window
                 )
-                dissonance_euc[y, x] = compute_neighbor_dissonance_at_position(
-                    self.wall, x, y, current_series, window, metric='euclidean', kernel_size=kernel_size
+                dissonance_euc[y, x] = self.wall.compute_position_dissonance(
+                    x, y, current_series, kernel_size, 'euclidean', window
                 )
 
                 # Update progress
