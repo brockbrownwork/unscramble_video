@@ -172,10 +172,6 @@ The main challenge is the combinatorial explosion of permutations among swap can
 
 ## Ideas
 
-- **Hierarchical chunking**: Find nearest neighbors in 9x9 blocks, then merge blocks into 18x18, and so on. Refinement stage: randomly remove pixels and fill back in with best DTW fit.
-
-- **Foveal packing**: Use hexagonal packing that's dense at center and sparse at edges (like the retina). Escher-style infinite density gradients could help organize ambiguous regions.
-
 - **Scramble threshold experiment**: Start with correct video, randomize N positions, solve, then increase N until the solver breaks down. Find the critical threshold.
 
 - **Distance metric comparison**: Compare Euclidean vs DTW correlation with actual TV distance to validate DTW as the better metric.
