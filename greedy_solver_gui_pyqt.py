@@ -53,7 +53,7 @@ class ImageCanvas(QLabel):
         super().__init__(parent)
         self.setMouseTracking(True)
         self.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self.setStyleSheet("background-color: #333333;")
+        self.setStyleSheet("background-color: #f8d7e3; border: 2px solid #ffb6c1; border-radius: 8px;")
         self.setMinimumSize(400, 300)
 
     def mouseMoveEvent(self, event):
@@ -64,7 +64,7 @@ class ImageCanvas(QLabel):
 class GreedySolverGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Greedy Solver - Unscramble Video (PyQt5)")
+        self.setWindowTitle("Greedy Solver - Unscramble Video")
         self.setGeometry(100, 100, 1500, 950)
 
         self.wall = None
@@ -258,7 +258,7 @@ class GreedySolverGUI(QMainWindow):
         self.topn_edit.setFixedWidth(50)
         topn_row.addWidget(self.topn_edit)
         topn_hint = QLabel("(# high-diss)")
-        topn_hint.setStyleSheet("font-size: 10px;")
+        topn_hint.setStyleSheet("font-size: 10px; color: #c97a94;")
         topn_row.addWidget(topn_hint)
         topn_row.addStretch()
         solver_layout.addLayout(topn_row)
@@ -272,7 +272,7 @@ class GreedySolverGUI(QMainWindow):
         self.topk_edit.setFixedWidth(50)
         topk_row.addWidget(self.topk_edit)
         topk_hint = QLabel("(for strategies)")
-        topk_hint.setStyleSheet("font-size: 10px;")
+        topk_hint.setStyleSheet("font-size: 10px; color: #c97a94;")
         topk_row.addWidget(topk_hint)
         topk_row.addStretch()
         solver_layout.addLayout(topk_row)
@@ -360,7 +360,7 @@ class GreedySolverGUI(QMainWindow):
         self.results_text = QTextEdit()
         self.results_text.setReadOnly(True)
         self.results_text.setMinimumHeight(200)
-        self.results_text.setStyleSheet("font-family: monospace; font-size: 9pt;")
+        self.results_text.setStyleSheet("font-family: 'Consolas', 'Courier New', monospace; font-size: 9pt; background-color: #fff; color: #8b4563;")
         results_layout.addWidget(self.results_text)
 
         left_layout.addWidget(results_group)
@@ -1245,14 +1245,17 @@ class GreedySolverGUI(QMainWindow):
         dx /= length
         dy /= length
 
-        offset = scale * 0.7
+        # Offset to keep line and arrows outside the pixel boundaries
+        # Use half pixel size plus margin to clear the pixels completely
+        arrow_size = 8
+        pixel_offset = scale * 0.7 + arrow_size  # Extra space for arrowheads
 
-        start_x = cx1 + dx * offset
-        start_y = cy1 + dy * offset
-        end_x = cx2 - dx * offset
-        end_y = cy2 - dy * offset
+        start_x = cx1 + dx * pixel_offset
+        start_y = cy1 + dy * pixel_offset
+        end_x = cx2 - dx * pixel_offset
+        end_y = cy2 - dy * pixel_offset
 
-        remaining_length = length - 2 * offset
+        remaining_length = length - 2 * pixel_offset
         if remaining_length > 0:
             painter = QPainter(pixmap)
             pen = QPen(QColor(0, 255, 255))
@@ -1261,24 +1264,25 @@ class GreedySolverGUI(QMainWindow):
             painter.drawLine(int(start_x), int(start_y), int(end_x), int(end_y))
 
             # Draw arrowheads
-            arrow_size = 8
             angle = np.arctan2(dy, dx)
 
-            # Arrow at end
-            ax1 = end_x - arrow_size * np.cos(angle - np.pi/6)
-            ay1 = end_y - arrow_size * np.sin(angle - np.pi/6)
-            ax2 = end_x - arrow_size * np.cos(angle + np.pi/6)
-            ay2 = end_y - arrow_size * np.sin(angle + np.pi/6)
-            painter.drawLine(int(end_x), int(end_y), int(ax1), int(ay1))
-            painter.drawLine(int(end_x), int(end_y), int(ax2), int(ay2))
+            # Arrow at end (pointing toward pos2)
+            arrow_tip_end = (end_x, end_y)
+            ax1 = arrow_tip_end[0] - arrow_size * np.cos(angle - np.pi/6)
+            ay1 = arrow_tip_end[1] - arrow_size * np.sin(angle - np.pi/6)
+            ax2 = arrow_tip_end[0] - arrow_size * np.cos(angle + np.pi/6)
+            ay2 = arrow_tip_end[1] - arrow_size * np.sin(angle + np.pi/6)
+            painter.drawLine(int(arrow_tip_end[0]), int(arrow_tip_end[1]), int(ax1), int(ay1))
+            painter.drawLine(int(arrow_tip_end[0]), int(arrow_tip_end[1]), int(ax2), int(ay2))
 
-            # Arrow at start (pointing backwards)
-            ax1 = start_x + arrow_size * np.cos(angle - np.pi/6)
-            ay1 = start_y + arrow_size * np.sin(angle - np.pi/6)
-            ax2 = start_x + arrow_size * np.cos(angle + np.pi/6)
-            ay2 = start_y + arrow_size * np.sin(angle + np.pi/6)
-            painter.drawLine(int(start_x), int(start_y), int(ax1), int(ay1))
-            painter.drawLine(int(start_x), int(start_y), int(ax2), int(ay2))
+            # Arrow at start (pointing toward pos1)
+            arrow_tip_start = (start_x, start_y)
+            ax1 = arrow_tip_start[0] + arrow_size * np.cos(angle - np.pi/6)
+            ay1 = arrow_tip_start[1] + arrow_size * np.sin(angle - np.pi/6)
+            ax2 = arrow_tip_start[0] + arrow_size * np.cos(angle + np.pi/6)
+            ay2 = arrow_tip_start[1] + arrow_size * np.sin(angle + np.pi/6)
+            painter.drawLine(int(arrow_tip_start[0]), int(arrow_tip_start[1]), int(ax1), int(ay1))
+            painter.drawLine(int(arrow_tip_start[0]), int(arrow_tip_start[1]), int(ax2), int(ay2))
 
             painter.end()
 
@@ -1372,8 +1376,261 @@ class GreedySolverGUI(QMainWindow):
         self.position_label.setText(info)
 
 
+def get_pink_stylesheet():
+    """Return a cute pink theme stylesheet."""
+    return """
+    /* Main window background */
+    QMainWindow {
+        background-color: #fff0f5;
+    }
+
+    QWidget {
+        background-color: #fff0f5;
+        color: #8b4563;
+        font-family: 'Segoe UI', Arial, sans-serif;
+    }
+
+    /* Group boxes */
+    QGroupBox {
+        background-color: #ffe4ec;
+        border: 2px solid #ffb6c1;
+        border-radius: 10px;
+        margin-top: 12px;
+        padding-top: 10px;
+        font-weight: bold;
+        color: #d63384;
+    }
+
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        padding: 2px 10px;
+        background-color: #ffb6c1;
+        border-radius: 5px;
+        color: #fff;
+    }
+
+    /* Buttons */
+    QPushButton {
+        background-color: #ff85a2;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-weight: bold;
+        min-height: 24px;
+    }
+
+    QPushButton:hover {
+        background-color: #ff6b8a;
+    }
+
+    QPushButton:pressed {
+        background-color: #e55a7b;
+    }
+
+    QPushButton:disabled {
+        background-color: #ddb8c4;
+        color: #f5e6ea;
+    }
+
+    /* Text inputs */
+    QLineEdit {
+        background-color: #fff;
+        border: 2px solid #ffb6c1;
+        border-radius: 6px;
+        padding: 4px 8px;
+        color: #8b4563;
+        selection-background-color: #ff85a2;
+    }
+
+    QLineEdit:focus {
+        border: 2px solid #ff85a2;
+    }
+
+    /* Combo boxes */
+    QComboBox {
+        background-color: #fff;
+        border: 2px solid #ffb6c1;
+        border-radius: 6px;
+        padding: 4px 8px;
+        color: #8b4563;
+        min-height: 20px;
+    }
+
+    QComboBox:hover {
+        border: 2px solid #ff85a2;
+    }
+
+    QComboBox::drop-down {
+        border: none;
+        width: 20px;
+    }
+
+    QComboBox::down-arrow {
+        width: 12px;
+        height: 12px;
+    }
+
+    QComboBox QAbstractItemView {
+        background-color: #fff;
+        border: 2px solid #ffb6c1;
+        selection-background-color: #ffb6c1;
+        selection-color: #8b4563;
+    }
+
+    /* Labels */
+    QLabel {
+        background-color: transparent;
+        color: #8b4563;
+    }
+
+    /* Text edit / results area */
+    QTextEdit {
+        background-color: #fff;
+        border: 2px solid #ffb6c1;
+        border-radius: 8px;
+        color: #8b4563;
+        selection-background-color: #ff85a2;
+    }
+
+    /* Scroll area */
+    QScrollArea {
+        background-color: #fff0f5;
+        border: none;
+    }
+
+    QScrollBar:vertical {
+        background-color: #ffe4ec;
+        width: 12px;
+        border-radius: 6px;
+    }
+
+    QScrollBar::handle:vertical {
+        background-color: #ffb6c1;
+        border-radius: 5px;
+        min-height: 20px;
+    }
+
+    QScrollBar::handle:vertical:hover {
+        background-color: #ff85a2;
+    }
+
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+        height: 0px;
+    }
+
+    QScrollBar:horizontal {
+        background-color: #ffe4ec;
+        height: 12px;
+        border-radius: 6px;
+    }
+
+    QScrollBar::handle:horizontal {
+        background-color: #ffb6c1;
+        border-radius: 5px;
+        min-width: 20px;
+    }
+
+    QScrollBar::handle:horizontal:hover {
+        background-color: #ff85a2;
+    }
+
+    QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+        width: 0px;
+    }
+
+    /* Radio buttons */
+    QRadioButton {
+        color: #8b4563;
+        spacing: 6px;
+    }
+
+    QRadioButton::indicator {
+        width: 16px;
+        height: 16px;
+        border-radius: 9px;
+        border: 2px solid #ffb6c1;
+        background-color: #fff;
+    }
+
+    QRadioButton::indicator:checked {
+        background-color: #ff85a2;
+        border: 2px solid #ff85a2;
+    }
+
+    QRadioButton::indicator:hover {
+        border: 2px solid #ff85a2;
+    }
+
+    /* Progress bar */
+    QProgressBar {
+        background-color: #ffe4ec;
+        border: 2px solid #ffb6c1;
+        border-radius: 8px;
+        text-align: center;
+        color: #8b4563;
+        font-weight: bold;
+    }
+
+    QProgressBar::chunk {
+        background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 #ff85a2, stop:1 #ffb6c1);
+        border-radius: 6px;
+    }
+
+    /* Sliders */
+    QSlider::groove:horizontal {
+        height: 8px;
+        background-color: #ffe4ec;
+        border-radius: 4px;
+        border: 1px solid #ffb6c1;
+    }
+
+    QSlider::handle:horizontal {
+        background-color: #ff85a2;
+        width: 18px;
+        height: 18px;
+        margin: -6px 0;
+        border-radius: 9px;
+        border: 2px solid #fff;
+    }
+
+    QSlider::handle:horizontal:hover {
+        background-color: #ff6b8a;
+    }
+
+    QSlider::sub-page:horizontal {
+        background-color: #ffb6c1;
+        border-radius: 4px;
+    }
+
+    /* Message boxes */
+    QMessageBox {
+        background-color: #fff0f5;
+    }
+
+    QMessageBox QLabel {
+        color: #8b4563;
+    }
+
+    QMessageBox QPushButton {
+        min-width: 80px;
+    }
+
+    /* File dialog */
+    QFileDialog {
+        background-color: #fff0f5;
+    }
+    """
+
+
 def main():
     app = QApplication(sys.argv)
+
+    # Apply the cute pink theme
+    app.setStyleSheet(get_pink_stylesheet())
+
     window = GreedySolverGUI()
     window.show()
     sys.exit(app.exec_())
