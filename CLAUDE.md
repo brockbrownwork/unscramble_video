@@ -297,3 +297,5 @@ python experiment_neighbor_dissonance.py \
 - **A* search**: Use neighbor dissonance as a heuristic cost function to prune the combinatorial search space of possible swaps.
 
 - **Hierarchical solving**: Solve at low resolution first (pooled pixels), then refine at higher resolution.
+
+- **Subsampled reconstruction**: When sampling a fraction of pixel positions rather than the full grid, the target arrangement should preserve the original aspect ratio. For a video with W×H dimensions and sampling ratio R, arrange TVs in a grid of (W√R) × (H√R). Example: sampling 25% of a 100×200 video → arrange as 50×100.
