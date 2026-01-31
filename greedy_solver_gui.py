@@ -438,19 +438,12 @@ class GreedySolverGUI:
         self.update_display()
 
     def get_current_series(self):
-        """Get color series array with current permutation."""
+        """Get color series array with current permutation (vectorized)."""
         if self.wall is None:
             return None
 
-        height, width = self.wall.height, self.wall.width
-        current = np.zeros_like(self.all_series)
-
-        for y in range(height):
-            for x in range(width):
-                orig_x, orig_y = self.wall.get_original_position(x, y)
-                current[y, x] = self.all_series[orig_y, orig_x]
-
-        return current
+        # Use the optimized TVWall method which uses NumPy advanced indexing
+        return self.wall.get_all_series()
 
     def identify_high_dissonance(self):
         """Phase 1: Identify high-dissonance positions using clustering."""
@@ -711,7 +704,9 @@ class GreedySolverGUI:
 
         Uses local dissonance optimization: only computes dissonance for the two
         swapped positions rather than the total dissonance of all high-dissonance
-        positions. This is much faster.
+        positions.
+
+        Optimized to avoid recomputing full series array on each tentative swap.
         """
         if not self.high_dissonance_positions:
             return False
@@ -720,49 +715,43 @@ class GreedySolverGUI:
         window = float(self.window_var.get())
         metric = self.metric_var.get()
 
-        # Recompute current series
+        # Compute current series once
         self.current_series = self.get_current_series()
 
+        # Batch compute dissonance for all high-dissonance positions at once
+        all_diss = self.wall.compute_batch_dissonance(
+            list(self.high_dissonance_positions),
+            self.current_series, kernel_size, metric, window
+        )
+
         # Find position with highest dissonance among high-dissonance set
-        best_pos = None
-        best_diss = -1
-        for pos in self.high_dissonance_positions:
-            x, y = pos
-            d = self.wall.compute_position_dissonance(x, y, self.current_series,
-                                                       kernel_size, metric, window)
-            if d > best_diss:
-                best_diss = d
-                best_pos = pos
-
-        if best_pos is None:
-            return False
-
-        # Compute current dissonance for best_pos
+        best_pos = max(self.high_dissonance_positions, key=lambda p: all_diss[p])
+        best_diss = all_diss[best_pos]
         x1, y1 = best_pos
-        diss_best_before = best_diss  # Already computed above
+        diss_best_before = best_diss
 
         best_swap = None
         best_improvement = 0
+
+        # Create local copy for swap evaluation
+        series_copy = self.current_series.copy()
 
         for other_pos in self.high_dissonance_positions:
             if other_pos == best_pos:
                 continue
 
             x2, y2 = other_pos
+            diss_other_before = all_diss[other_pos]
 
-            # Compute current dissonance for other_pos before swap
-            diss_other_before = self.wall.compute_position_dissonance(
-                x2, y2, self.current_series, kernel_size, metric, window)
-
-            # Tentatively swap
-            self.wall.swap_positions(best_pos, other_pos)
-            self.current_series = self.get_current_series()
+            # Swap series values locally (not in the wall)
+            series_copy[y1, x1], series_copy[y2, x2] = \
+                series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
             # Compute dissonance for both positions after swap
             diss_best_after = self.wall.compute_position_dissonance(
-                x1, y1, self.current_series, kernel_size, metric, window)
+                x1, y1, series_copy, kernel_size, metric, window)
             diss_other_after = self.wall.compute_position_dissonance(
-                x2, y2, self.current_series, kernel_size, metric, window)
+                x2, y2, series_copy, kernel_size, metric, window)
 
             # Improvement is reduction in combined dissonance of the two positions
             before_sum = diss_best_before + diss_other_before
@@ -773,11 +762,9 @@ class GreedySolverGUI:
                 best_improvement = improvement
                 best_swap = other_pos
 
-            # Revert
-            self.wall.swap_positions(best_pos, other_pos)
-
-        # Restore current_series to match reverted state
-        self.current_series = self.get_current_series()
+            # Revert the local swap
+            series_copy[y1, x1], series_copy[y2, x2] = \
+                series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
         if best_swap is not None and best_improvement > 0:
             self.wall.swap_positions(best_pos, best_swap)
@@ -791,7 +778,10 @@ class GreedySolverGUI:
 
         Uses local dissonance optimization: only computes dissonance for the two
         swapped positions rather than the total dissonance of all high-dissonance
-        positions. This is much faster.
+        positions.
+
+        Optimized to avoid recomputing full series array on each tentative swap.
+        Instead, we compute dissonance by swapping series values locally.
         """
         if not self.high_dissonance_positions:
             return False
@@ -801,21 +791,20 @@ class GreedySolverGUI:
         window = float(self.window_var.get())
         metric = self.metric_var.get()
 
-        # Recompute current series
+        # Compute current series once
         self.current_series = self.get_current_series()
 
-        # Get top-K highest dissonance positions with their dissonance values
-        diss_list = []
-        for pos in self.high_dissonance_positions:
-            x, y = pos
-            d = self.wall.compute_position_dissonance(x, y, self.current_series,
-                                                       kernel_size, metric, window)
-            diss_list.append((d, pos))
+        # Batch compute dissonance for all high-dissonance positions at once
+        all_diss = self.wall.compute_batch_dissonance(
+            list(self.high_dissonance_positions),
+            self.current_series, kernel_size, metric, window
+        )
 
+        # Get top-K highest dissonance positions
+        diss_list = [(all_diss[pos], pos) for pos in self.high_dissonance_positions]
         diss_list.sort(reverse=True)
         top_k_with_diss = diss_list[:topk]
         top_positions = [pos for _, pos in top_k_with_diss]
-        # Map position to its current dissonance for quick lookup
         diss_before = {pos: d for d, pos in top_k_with_diss}
 
         if len(top_positions) < 2:
@@ -824,9 +813,15 @@ class GreedySolverGUI:
         best_swap = None
         best_improvement = 0
 
-        # Try all pairs
-        for i in range(len(top_positions)):
-            for j in range(i + 1, len(top_positions)):
+        # For evaluating swaps, we create a local copy of the series that we can modify
+        # Instead of swapping in the wall and recomputing, swap in the series array
+        series_copy = self.current_series.copy()
+
+        # Try all pairs - use vectorized swap evaluation
+        n_positions = len(top_positions)
+
+        for i in range(n_positions):
+            for j in range(i + 1, n_positions):
                 pos1 = top_positions[i]
                 pos2 = top_positions[j]
                 x1, y1 = pos1
@@ -836,15 +831,15 @@ class GreedySolverGUI:
                 diss1_before = diss_before[pos1]
                 diss2_before = diss_before[pos2]
 
-                # Tentatively swap
-                self.wall.swap_positions(pos1, pos2)
-                self.current_series = self.get_current_series()
+                # Swap series values locally (not in the wall)
+                series_copy[y1, x1], series_copy[y2, x2] = \
+                    series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
                 # Compute dissonance after swap for both positions
                 diss1_after = self.wall.compute_position_dissonance(
-                    x1, y1, self.current_series, kernel_size, metric, window)
+                    x1, y1, series_copy, kernel_size, metric, window)
                 diss2_after = self.wall.compute_position_dissonance(
-                    x2, y2, self.current_series, kernel_size, metric, window)
+                    x2, y2, series_copy, kernel_size, metric, window)
 
                 # Improvement is reduction in combined dissonance
                 before_sum = diss1_before + diss2_before
@@ -855,11 +850,9 @@ class GreedySolverGUI:
                     best_improvement = improvement
                     best_swap = (pos1, pos2)
 
-                # Revert
-                self.wall.swap_positions(pos1, pos2)
-
-        # Restore current_series to match reverted state
-        self.current_series = self.get_current_series()
+                # Revert the local swap
+                series_copy[y1, x1], series_copy[y2, x2] = \
+                    series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
         if best_swap is not None and best_improvement > 0:
             self.wall.swap_positions(best_swap[0], best_swap[1])
@@ -873,7 +866,9 @@ class GreedySolverGUI:
 
         Uses local dissonance optimization: only computes dissonance for the two
         swapped positions rather than the total dissonance of all high-dissonance
-        positions. This is much faster.
+        positions.
+
+        Optimized to avoid recomputing full series array for evaluation.
         """
         if not self.high_dissonance_positions:
             return False
@@ -885,17 +880,17 @@ class GreedySolverGUI:
         window = float(self.window_var.get())
         metric = self.metric_var.get()
 
-        # Recompute current series
+        # Compute current series once
         self.current_series = self.get_current_series()
 
-        # Get top-K highest dissonance positions with their dissonance values
-        diss_list = []
-        for pos in self.high_dissonance_positions:
-            x, y = pos
-            d = self.wall.compute_position_dissonance(x, y, self.current_series,
-                                                       kernel_size, metric, window)
-            diss_list.append((d, pos))
+        # Batch compute dissonance for all high-dissonance positions at once
+        all_diss = self.wall.compute_batch_dissonance(
+            list(self.high_dissonance_positions),
+            self.current_series, kernel_size, metric, window
+        )
 
+        # Get top-K highest dissonance positions
+        diss_list = [(all_diss[pos], pos) for pos in self.high_dissonance_positions]
         diss_list.sort(reverse=True)
         top_k_with_diss = diss_list[:topk]
         top_positions = [pos for _, pos in top_k_with_diss]
@@ -914,15 +909,16 @@ class GreedySolverGUI:
         diss1_before = diss_before[pos1]
         diss2_before = diss_before[pos2]
 
-        # Perform swap
-        self.wall.swap_positions(pos1, pos2)
-        self.current_series = self.get_current_series()
+        # Evaluate swap using local series copy first
+        series_copy = self.current_series.copy()
+        series_copy[y1, x1], series_copy[y2, x2] = \
+            series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
         # Compute dissonance after swap
         diss1_after = self.wall.compute_position_dissonance(
-            x1, y1, self.current_series, kernel_size, metric, window)
+            x1, y1, series_copy, kernel_size, metric, window)
         diss2_after = self.wall.compute_position_dissonance(
-            x2, y2, self.current_series, kernel_size, metric, window)
+            x2, y2, series_copy, kernel_size, metric, window)
 
         # Delta is increase in combined dissonance (positive = worse)
         before_sum = diss1_before + diss2_before
@@ -938,8 +934,8 @@ class GreedySolverGUI:
             if np.random.random() < prob:
                 accept = True
 
-        if not accept:
-            # Revert
+        if accept:
+            # Actually perform the swap in the wall
             self.wall.swap_positions(pos1, pos2)
             self.current_series = self.get_current_series()
 
@@ -954,6 +950,8 @@ class GreedySolverGUI:
         Note: This is only used for metrics/display purposes, not for swap evaluation.
         The solver strategies use local dissonance (comparing just the two swapped
         positions) for efficiency.
+
+        Uses batch computation for better performance.
         """
         if not self.high_dissonance_positions:
             return 0
@@ -965,12 +963,13 @@ class GreedySolverGUI:
         if self.current_series is None:
             self.current_series = self.get_current_series()
 
-        total = 0
-        for pos in self.high_dissonance_positions:
-            x, y = pos
-            total += self.wall.compute_position_dissonance(x, y, self.current_series,
-                                                            kernel_size, metric, window)
-        return total
+        # Use batch computation
+        all_diss = self.wall.compute_batch_dissonance(
+            list(self.high_dissonance_positions),
+            self.current_series, kernel_size, metric, window
+        )
+
+        return sum(all_diss.values())
 
     def step_solver(self):
         """Execute a single solver step."""

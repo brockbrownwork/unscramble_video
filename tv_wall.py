@@ -30,7 +30,7 @@ class TVWall:
         _perm_x (np.ndarray): Index array mapping current positions to original x coords.
     """
 
-    def __init__(self, video_path, num_frames=None, start_frame=0, stride=1):
+    def __init__(self, video_path, num_frames=None, start_frame=0, stride=1, crop_percent=100):
         """
         Initialize a TVWall from a video file.
 
@@ -39,12 +39,16 @@ class TVWall:
             num_frames (int, optional): Number of frames to extract. If None, extracts all frames.
             start_frame (int): Starting frame number (default: 0).
             stride (int): Frame skip interval (default: 1 for every frame).
+            crop_percent (float): Percentage of video to keep, cropped to center (1-100).
+                                  Maintains original aspect ratio. Default: 100 (no crop).
         """
         self.video_path = video_path
         self.start_frame = start_frame
         self.stride = stride
+        self.crop_percent = max(1, min(100, crop_percent))
 
         self._load_video(num_frames)
+        self._apply_crop()
         self._init_permutation()
 
     def _load_video(self, num_frames):
@@ -85,6 +89,28 @@ class TVWall:
         # Note: OpenCV returns frames as (height, width, channels)
         self.height = self._frames.shape[1]
         self.width = self._frames.shape[2]
+
+    def _apply_crop(self):
+        """Apply center crop based on crop_percent, maintaining aspect ratio."""
+        if self.crop_percent >= 100:
+            return
+
+        scale = self.crop_percent / 100.0
+        orig_h, orig_w = self.height, self.width
+
+        new_w = int(orig_w * scale)
+        new_h = int(orig_h * scale)
+
+        # Calculate crop offsets to center
+        x_start = (orig_w - new_w) // 2
+        y_start = (orig_h - new_h) // 2
+
+        # Crop all frames
+        self._frames = self._frames[:, y_start:y_start + new_h, x_start:x_start + new_w, :]
+
+        # Update dimensions
+        self.height = new_h
+        self.width = new_w
 
     def _init_permutation(self):
         """Initialize permutation arrays to identity mapping."""
@@ -404,12 +430,10 @@ class TVWall:
             np.ndarray: Array of shape (height, width, 3, num_frames) with color series
                        for each position according to current permutation.
         """
-        # Build series array using current permutation
-        series = np.zeros((self.height, self.width, 3, self.num_frames), dtype=np.float32)
-        for y in range(self.height):
-            for x in range(self.width):
-                orig_x, orig_y = self.get_original_position(x, y)
-                series[y, x] = self.get_tv_color_series(orig_x, orig_y).T
+        # Use vectorized indexing: _frames is (num_frames, height, width, 3)
+        # _perm_y and _perm_x give original positions for each current position
+        # Result: (num_frames, height, width, 3) -> transpose to (height, width, 3, num_frames)
+        series = self._frames[:, self._perm_y, self._perm_x, :].transpose(1, 2, 3, 0).astype(np.float32)
         return series
 
     def compute_position_dissonance(self, x, y, all_series=None, kernel_size=3,
@@ -440,7 +464,29 @@ class TVWall:
         if all_series is None:
             all_series = self.get_all_series()
 
-        center_series = all_series[y, x]
+        center_series = all_series[y, x]  # shape: (3, num_frames)
+
+        # For simple metrics, use fast NumPy computation instead of aeon
+        if distance_metric in ('euclidean', 'squared', 'manhattan'):
+            # Stack neighbor series: shape (n_neighbors, 3, num_frames)
+            neighbor_series = np.array([all_series[ny, nx] for nx, ny in neighbors])
+
+            # Compute distances from center to each neighbor
+            diff = neighbor_series - center_series  # broadcasting
+
+            if distance_metric == 'euclidean':
+                # Euclidean: sqrt(sum of squared differences)
+                distances = np.sqrt(np.sum(diff ** 2, axis=(1, 2)))
+            elif distance_metric == 'squared':
+                # Squared Euclidean: sum of squared differences
+                distances = np.sum(diff ** 2, axis=(1, 2))
+            else:  # manhattan
+                # Manhattan: sum of absolute differences
+                distances = np.sum(np.abs(diff), axis=(1, 2))
+
+            return distances.mean()
+
+        # For DTW and other complex metrics, use aeon
         series_list = [center_series]
         for nx, ny in neighbors:
             series_list.append(all_series[ny, nx])
@@ -450,15 +496,6 @@ class TVWall:
         if distance_metric == 'dtw':
             from aeon.distances import dtw_pairwise_distance
             distances = dtw_pairwise_distance(stacked, window=window)
-        elif distance_metric == 'euclidean':
-            from aeon.distances import euclidean_pairwise_distance
-            distances = euclidean_pairwise_distance(stacked)
-        elif distance_metric == 'squared':
-            from aeon.distances import squared_pairwise_distance
-            distances = squared_pairwise_distance(stacked)
-        elif distance_metric == 'manhattan':
-            from aeon.distances import manhattan_pairwise_distance
-            distances = manhattan_pairwise_distance(stacked)
         elif distance_metric == 'cosine':
             # Compute cosine distance manually (1 - cosine similarity)
             # Flatten each series to 1D for cosine computation
@@ -527,6 +564,120 @@ class TVWall:
                     x, y, all_series, kernel_size, distance_metric, window
                 )
         return dissonance_map
+
+    def compute_batch_dissonance(self, positions, all_series=None, kernel_size=3,
+                                  distance_metric='dtw', window=0.1):
+        """
+        Compute dissonance for multiple positions efficiently.
+
+        This method batches all the pairwise distance computations together
+        for better performance when computing dissonance for many positions.
+        Note: Batching is most beneficial for expensive metrics like DTW.
+        For simple metrics like euclidean, individual computation may be faster
+        for small numbers of positions.
+
+        Parameters:
+            positions (list): List of (x, y) tuples to compute dissonance for.
+            all_series (np.ndarray, optional): Precomputed series array from get_all_series().
+            kernel_size (int): Size of neighborhood kernel (default: 3).
+            distance_metric (str): Distance metric to use ('dtw', 'euclidean', etc.).
+            window (float): Sakoe-Chiba band window for DTW (0.0-1.0).
+
+        Returns:
+            dict: Mapping from (x, y) -> dissonance value.
+        """
+        if all_series is None:
+            all_series = self.get_all_series()
+
+        if not positions:
+            return {}
+
+        # For simple metrics, use individual computation (fast NumPy path).
+        # Batch computation only beneficial for DTW due to aeon overhead.
+        if distance_metric != 'dtw':
+            return {pos: self.compute_position_dissonance(pos[0], pos[1], all_series,
+                                                          kernel_size, distance_metric, window)
+                    for pos in positions}
+
+        # Build list of all unique (center, neighbor) pairs we need to compute
+        # and track which positions need which distances
+        all_pairs = []  # List of ((x1, y1), (x2, y2)) pairs
+        pair_to_idx = {}  # Map (pos1, pos2) -> index in all_pairs
+        pos_to_neighbor_pairs = {}  # Map pos -> list of pair indices
+
+        for pos in positions:
+            x, y = pos
+            neighbors = self.get_neighbors(x, y, kernel_size)
+            if not neighbors:
+                pos_to_neighbor_pairs[pos] = []
+                continue
+
+            pair_indices = []
+            for nx, ny in neighbors:
+                # Use canonical ordering to avoid duplicate pairs
+                pair = (pos, (nx, ny))
+                if pair not in pair_to_idx:
+                    pair_to_idx[pair] = len(all_pairs)
+                    all_pairs.append(pair)
+                pair_indices.append(pair_to_idx[pair])
+            pos_to_neighbor_pairs[pos] = pair_indices
+
+        if not all_pairs:
+            return {pos: 0.0 for pos in positions}
+
+        # Collect all series we need
+        all_positions_needed = set()
+        for (p1, p2) in all_pairs:
+            all_positions_needed.add(p1)
+            all_positions_needed.add(p2)
+
+        pos_list = list(all_positions_needed)
+        pos_to_series_idx = {pos: i for i, pos in enumerate(pos_list)}
+
+        # Stack all needed series: shape (n_series, 3, num_frames)
+        series_stack = np.array([all_series[y, x] for x, y in pos_list])
+
+        # Compute pairwise distances for all series at once
+        if distance_metric == 'dtw':
+            from aeon.distances import dtw_pairwise_distance
+            dist_matrix = dtw_pairwise_distance(series_stack, window=window)
+        elif distance_metric == 'euclidean':
+            from aeon.distances import euclidean_pairwise_distance
+            dist_matrix = euclidean_pairwise_distance(series_stack)
+        elif distance_metric == 'squared':
+            from aeon.distances import squared_pairwise_distance
+            dist_matrix = squared_pairwise_distance(series_stack)
+        elif distance_metric == 'manhattan':
+            from aeon.distances import manhattan_pairwise_distance
+            dist_matrix = manhattan_pairwise_distance(series_stack)
+        elif distance_metric == 'cosine':
+            flat = series_stack.reshape(series_stack.shape[0], -1)
+            from scipy.spatial.distance import cdist
+            dist_matrix = cdist(flat, flat, metric='cosine')
+        else:
+            import aeon.distances as aeon_dist
+            pairwise_func = getattr(aeon_dist, f'{distance_metric}_pairwise_distance', None)
+            if pairwise_func is None:
+                raise ValueError(f"Unknown distance metric: {distance_metric}")
+            dist_matrix = pairwise_func(series_stack)
+
+        # Extract distances for each pair
+        pair_distances = np.zeros(len(all_pairs))
+        for i, (p1, p2) in enumerate(all_pairs):
+            idx1 = pos_to_series_idx[p1]
+            idx2 = pos_to_series_idx[p2]
+            pair_distances[i] = dist_matrix[idx1, idx2]
+
+        # Compute dissonance for each position
+        result = {}
+        for pos in positions:
+            pair_indices = pos_to_neighbor_pairs[pos]
+            if not pair_indices:
+                result[pos] = 0.0
+            else:
+                result[pos] = np.mean([pair_distances[i] for i in pair_indices])
+
+        return result
 
     def __repr__(self):
         return (f"TVWall(video='{self.video_path}', width={self.width}, "
