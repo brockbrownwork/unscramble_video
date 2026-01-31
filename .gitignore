@@ -1,6 +1,7 @@
 *.pyc
 *.npy
 *.gif
+*.7z
 __pycache__/
 media/
 ffmpeg/
