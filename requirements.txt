@@ -7,3 +7,4 @@ Pillow
 scipy
 aeon
 scikit-learn
+cupy-cuda13x
