@@ -611,16 +611,11 @@ class TVWall:
         if all_series is None:
             all_series = self.get_all_series()
 
-        # For GPU-accelerated simple metrics, use batch computation
+        # For GPU-accelerated simple metrics, use fully vectorized map computation
         if self._gpu is not None and distance_metric in ('euclidean', 'squared', 'manhattan'):
-            all_positions = [(x, y) for y in range(self.height) for x in range(self.width)]
-            diss_dict = self.compute_batch_dissonance(
-                all_positions, all_series, kernel_size, distance_metric, window
+            return self._gpu.compute_dissonance_map_gpu(
+                all_series, kernel_size, distance_metric
             )
-            dissonance_map = np.zeros((self.height, self.width))
-            for (x, y), val in diss_dict.items():
-                dissonance_map[y, x] = val
-            return dissonance_map
 
         # CPU path
         dissonance_map = np.zeros((self.height, self.width))

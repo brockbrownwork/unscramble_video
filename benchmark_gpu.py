@@ -109,18 +109,28 @@ def benchmark_compute_batch_dissonance(wall_gpu, wall_cpu, num_positions=500, nu
     series_gpu = wall_gpu.get_all_series() if wall_gpu.gpu_enabled else None
     series_cpu = wall_cpu.get_all_series()
 
+    # Warmup GPU for all metrics
+    if wall_gpu.gpu_enabled:
+        for metric in ['euclidean', 'squared', 'manhattan']:
+            _ = wall_gpu.compute_batch_dissonance(positions, series_gpu, distance_metric=metric)
+        if CUPY_AVAILABLE:
+            import cupy as cp
+            cp.cuda.Stream.null.synchronize()
+
     for metric in ['euclidean', 'squared', 'manhattan']:
         print(f"\n  Metric: {metric}")
 
         # GPU timing
         if wall_gpu.gpu_enabled:
+            if CUPY_AVAILABLE:
+                import cupy as cp
+                cp.cuda.Stream.null.synchronize()
             start = time.perf_counter()
             for _ in range(num_runs):
                 result = wall_gpu.compute_batch_dissonance(
                     positions, series_gpu, distance_metric=metric
                 )
             if CUPY_AVAILABLE:
-                import cupy as cp
                 cp.cuda.Stream.null.synchronize()
             gpu_time = (time.perf_counter() - start) / num_runs
             print(f"    GPU: {gpu_time * 1000:.1f} ms per call")

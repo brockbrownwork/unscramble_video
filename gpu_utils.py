@@ -228,7 +228,8 @@ class GPUAccelerator:
         """
         GPU-accelerated batch dissonance computation.
 
-        Computes dissonance for multiple positions in parallel on GPU.
+        Computes dissonance for multiple positions in parallel on GPU using
+        fully vectorized operations - processes all positions and all offsets together.
 
         Parameters:
             positions: List of (x, y) positions.
@@ -249,18 +250,161 @@ class GPUAccelerator:
         if self.use_gpu and not is_gpu_array(all_series):
             all_series = cp.asarray(all_series)
 
-        results = {}
+        height, width, channels, num_frames = all_series.shape
+        n_positions = len(positions)
+        radius = kernel_size // 2
 
-        # For now, compute each position (still faster due to GPU distance computation)
-        # TODO: Further optimize by batching all positions together
-        for pos in positions:
-            x, y = pos
-            neighbors = get_neighbors_func(x, y, kernel_size)
-            results[pos] = self.compute_position_dissonance(
-                x, y, all_series, neighbors, distance_metric
-            )
+        # Build neighbor offsets
+        offsets = []
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if dx != 0 or dy != 0:
+                    offsets.append((dx, dy))
+        n_offsets = len(offsets)
 
-        return results
+        # Convert positions to GPU arrays
+        center_x = xp.array([p[0] for p in positions], dtype=xp.int32)
+        center_y = xp.array([p[1] for p in positions], dtype=xp.int32)
+
+        # Get center series for all positions: shape (n_positions, 3, num_frames)
+        center_series = all_series[center_y, center_x]
+
+        # Build all neighbor coordinates at once: shape (n_offsets, n_positions)
+        offsets_dx = xp.array([o[0] for o in offsets], dtype=xp.int32)
+        offsets_dy = xp.array([o[1] for o in offsets], dtype=xp.int32)
+
+        # Broadcast: (n_offsets, 1) + (1, n_positions) -> (n_offsets, n_positions)
+        all_nx = offsets_dx[:, None] + center_x[None, :]
+        all_ny = offsets_dy[:, None] + center_y[None, :]
+
+        # Validity mask: (n_offsets, n_positions)
+        valid = (all_nx >= 0) & (all_nx < width) & (all_ny >= 0) & (all_ny < height)
+
+        # Clip coordinates for safe indexing (invalid ones will be masked out)
+        all_nx_clipped = xp.clip(all_nx, 0, width - 1)
+        all_ny_clipped = xp.clip(all_ny, 0, height - 1)
+
+        # Get all neighbor series: (n_offsets, n_positions, 3, num_frames)
+        neighbor_series = all_series[all_ny_clipped, all_nx_clipped]
+
+        # Compute differences: (n_offsets, n_positions, 3, num_frames)
+        diff = neighbor_series - center_series[None, :, :, :]
+
+        # Compute distances based on metric: (n_offsets, n_positions)
+        if distance_metric == 'euclidean':
+            distances = xp.sqrt(xp.sum(diff ** 2, axis=(2, 3)))
+        elif distance_metric == 'squared':
+            distances = xp.sum(diff ** 2, axis=(2, 3))
+        elif distance_metric == 'manhattan':
+            distances = xp.sum(xp.abs(diff), axis=(2, 3))
+        else:
+            raise ValueError(f"Unsupported metric for GPU: {distance_metric}")
+
+        # Mask out invalid neighbors
+        distances = xp.where(valid, distances, xp.float32(0.0))
+
+        # Sum distances and count valid neighbors per position
+        total_distances = xp.sum(distances, axis=0)  # (n_positions,)
+        neighbor_counts = xp.sum(valid.astype(xp.float32), axis=0)  # (n_positions,)
+
+        # Compute mean dissonance
+        mean_dissonance = xp.where(
+            neighbor_counts > 0,
+            total_distances / neighbor_counts,
+            xp.float32(0.0)
+        )
+
+        # Transfer to CPU for dict construction
+        if self.use_gpu:
+            mean_dissonance_cpu = cp.asnumpy(mean_dissonance)
+        else:
+            mean_dissonance_cpu = mean_dissonance
+
+        return {pos: float(mean_dissonance_cpu[i]) for i, pos in enumerate(positions)}
+
+    def compute_dissonance_map_gpu(self, all_series, kernel_size=3, distance_metric='euclidean'):
+        """
+        Compute dissonance map for ALL positions in a single vectorized GPU operation.
+
+        This is much faster than computing positions individually because it:
+        1. Keeps all data on GPU
+        2. Uses a single batched operation across all pixels
+        3. Leverages GPU parallelism across the entire image
+
+        Parameters:
+            all_series: Full series array (height, width, 3, num_frames) on GPU.
+            kernel_size: Neighborhood kernel size.
+            distance_metric: Distance metric ('euclidean', 'squared', 'manhattan').
+
+        Returns:
+            np.ndarray: Dissonance map of shape (height, width) on CPU.
+        """
+        xp = self.xp
+
+        # Ensure all_series is on GPU
+        if self.use_gpu and not is_gpu_array(all_series):
+            all_series = cp.asarray(all_series)
+
+        height, width, channels, num_frames = all_series.shape
+        radius = kernel_size // 2
+
+        # Initialize accumulators for total distance and neighbor count
+        total_distances = xp.zeros((height, width), dtype=xp.float32)
+        neighbor_counts = xp.zeros((height, width), dtype=xp.float32)
+
+        # For each offset in the kernel, compute distances to all pixels at once
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if dx == 0 and dy == 0:
+                    continue
+
+                # Compute the overlap region where both center and neighbor are valid
+                # Center region: where we can look at offset (dx, dy)
+                if dx >= 0:
+                    c_x_start, c_x_end = 0, width - dx
+                    n_x_start, n_x_end = dx, width
+                else:
+                    c_x_start, c_x_end = -dx, width
+                    n_x_start, n_x_end = 0, width + dx
+
+                if dy >= 0:
+                    c_y_start, c_y_end = 0, height - dy
+                    n_y_start, n_y_end = dy, height
+                else:
+                    c_y_start, c_y_end = -dy, height
+                    n_y_start, n_y_end = 0, height + dy
+
+                # Extract center and neighbor series for this offset
+                center = all_series[c_y_start:c_y_end, c_x_start:c_x_end]
+                neighbor = all_series[n_y_start:n_y_end, n_x_start:n_x_end]
+
+                # Compute distance for this offset
+                diff = neighbor - center  # (h, w, 3, num_frames)
+
+                if distance_metric == 'euclidean':
+                    dist = xp.sqrt(xp.sum(diff ** 2, axis=(2, 3)))
+                elif distance_metric == 'squared':
+                    dist = xp.sum(diff ** 2, axis=(2, 3))
+                elif distance_metric == 'manhattan':
+                    dist = xp.sum(xp.abs(diff), axis=(2, 3))
+                else:
+                    raise ValueError(f"Unsupported metric for GPU: {distance_metric}")
+
+                # Accumulate into the total (only for the valid region)
+                total_distances[c_y_start:c_y_end, c_x_start:c_x_end] += dist
+                neighbor_counts[c_y_start:c_y_end, c_x_start:c_x_end] += 1.0
+
+        # Compute mean dissonance
+        dissonance_map = xp.where(
+            neighbor_counts > 0,
+            total_distances / neighbor_counts,
+            xp.float32(0.0)
+        )
+
+        # Transfer to CPU
+        if self.use_gpu:
+            return cp.asnumpy(dissonance_map)
+        return dissonance_map
 
     def compute_pairwise_euclidean(self, series_stack):
         """
