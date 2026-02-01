@@ -28,7 +28,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QFrame, QSizePolicy, QScrollArea, QSplitter
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
-from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor
+from PyQt5.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QFontDatabase
 
 import matplotlib
 matplotlib.use('Qt5Agg')
@@ -91,7 +91,7 @@ class MetricsGraphWidget(QWidget):
             QLabel {
                 font-size: 28px;
                 font-weight: bold;
-                font-family: 'Georgia', 'Times New Roman', serif;
+                font-family: 'Kablammo', 'Georgia', 'Times New Roman', serif;
                 color: #d63384;
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 #ffe4ec, stop:0.5 #fff0f5, stop:1 #ffe4ec);
@@ -1855,6 +1855,11 @@ def get_pink_stylesheet():
 
 def main():
     app = QApplication(sys.argv)
+
+    # Load Kablammo font for fancy iteration counter
+    font_path = os.path.join(os.path.dirname(__file__), "Kablammo-Regular-VariableFont_MORF.ttf")
+    if os.path.exists(font_path):
+        QFontDatabase.addApplicationFont(font_path)
 
     # Apply the cute pink theme
     app.setStyleSheet(get_pink_stylesheet())
