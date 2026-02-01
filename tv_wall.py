@@ -17,6 +17,14 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
+# GPU acceleration support
+try:
+    from gpu_utils import GPUAccelerator, CUPY_AVAILABLE, to_cpu
+except ImportError:
+    GPUAccelerator = None
+    CUPY_AVAILABLE = False
+    def to_cpu(x): return x
+
 
 class TVWall:
     """
@@ -30,7 +38,8 @@ class TVWall:
         _perm_x (np.ndarray): Index array mapping current positions to original x coords.
     """
 
-    def __init__(self, video_path, num_frames=None, start_frame=0, stride=1, crop_percent=100):
+    def __init__(self, video_path, num_frames=None, start_frame=0, stride=1, crop_percent=100,
+                 use_gpu=True):
         """
         Initialize a TVWall from a video file.
 
@@ -41,6 +50,7 @@ class TVWall:
             stride (int): Frame skip interval (default: 1 for every frame).
             crop_percent (float): Percentage of video to keep, cropped to center (1-100).
                                   Maintains original aspect ratio. Default: 100 (no crop).
+            use_gpu (bool): Whether to use GPU acceleration if available (default: True).
         """
         self.video_path = video_path
         self.start_frame = start_frame
@@ -50,6 +60,15 @@ class TVWall:
         self._load_video(num_frames)
         self._apply_crop()
         self._init_permutation()
+
+        # Initialize GPU accelerator
+        self._use_gpu = use_gpu and CUPY_AVAILABLE and GPUAccelerator is not None
+        if self._use_gpu:
+            self._gpu = GPUAccelerator(use_gpu=True)
+            self._gpu.cache_frames(self._frames)
+            self._gpu.cache_permutation(self._perm_x, self._perm_y)
+        else:
+            self._gpu = None
 
     def _load_video(self, num_frames):
         """Load frames from the video file."""
@@ -122,6 +141,11 @@ class TVWall:
         """Total number of TVs in the wall."""
         return self.width * self.height
 
+    @property
+    def gpu_enabled(self):
+        """Check if GPU acceleration is active."""
+        return self._gpu is not None and self._gpu.is_gpu_enabled
+
     def get_original_position(self, x, y):
         """
         Get the original TV position that is currently displayed at (x, y).
@@ -183,6 +207,11 @@ class TVWall:
         self._perm_x[y1, x1], self._perm_x[y2, x2] = self._perm_x[y2, x2], self._perm_x[y1, x1]
         self._perm_y[y1, x1], self._perm_y[y2, x2] = self._perm_y[y2, x2], self._perm_y[y1, x1]
 
+        # Invalidate GPU caches
+        if self._gpu is not None:
+            self._gpu.cache_permutation(self._perm_x, self._perm_y)
+            self._gpu.invalidate_series_cache()
+
     def scramble(self, seed=None):
         """
         Randomly scramble all TV positions.
@@ -226,9 +255,17 @@ class TVWall:
         flat_perm_x[selected_indices] = selected_x[shuffle_order]
         flat_perm_y[selected_indices] = selected_y[shuffle_order]
 
+        # Update GPU cache
+        if self._gpu is not None:
+            self._gpu.cache_permutation(self._perm_x, self._perm_y)
+            self._gpu.invalidate_series_cache()
+
     def reset_swaps(self):
         """Reset all swaps, returning TVs to their original positions."""
         self._init_permutation()
+        if self._gpu is not None:
+            self._gpu.cache_permutation(self._perm_x, self._perm_y)
+            self._gpu.invalidate_series_cache()
 
     def short_swaps(self, num_swaps, max_dist, seed=None):
         """
@@ -422,19 +459,28 @@ class TVWall:
                     neighbors.append((nx, ny))
         return neighbors
 
-    def get_all_series(self):
+    def get_all_series(self, force_cpu=False):
         """
         Get all TV color series with current swap configuration.
+
+        Parameters:
+            force_cpu (bool): If True, always return a numpy array on CPU.
+                             If False and GPU is enabled, may return a cupy array.
 
         Returns:
             np.ndarray: Array of shape (height, width, 3, num_frames) with color series
                        for each position according to current permutation.
         """
-        # Use vectorized indexing: _frames is (num_frames, height, width, 3)
-        # _perm_y and _perm_x give original positions for each current position
-        # Result: (num_frames, height, width, 3) -> transpose to (height, width, 3, num_frames)
-        series = self._frames[:, self._perm_y, self._perm_x, :].transpose(1, 2, 3, 0).astype(np.float32)
-        return series
+        if self._gpu is not None and not force_cpu:
+            # Use GPU-accelerated version
+            series = self._gpu.get_all_series()
+            return series
+        else:
+            # Use vectorized indexing: _frames is (num_frames, height, width, 3)
+            # _perm_y and _perm_x give original positions for each current position
+            # Result: (num_frames, height, width, 3) -> transpose to (height, width, 3, num_frames)
+            series = self._frames[:, self._perm_y, self._perm_x, :].transpose(1, 2, 3, 0).astype(np.float32)
+            return series
 
     def compute_position_dissonance(self, x, y, all_series=None, kernel_size=3,
                                      distance_metric='dtw', window=0.1):
@@ -464,12 +510,20 @@ class TVWall:
         if all_series is None:
             all_series = self.get_all_series()
 
-        center_series = all_series[y, x]  # shape: (3, num_frames)
+        # Use GPU acceleration for simple metrics if available
+        if self._gpu is not None and distance_metric in ('euclidean', 'squared', 'manhattan'):
+            return self._gpu.compute_position_dissonance(
+                x, y, all_series, neighbors, distance_metric
+            )
+
+        # CPU path: ensure we have numpy arrays
+        all_series_cpu = to_cpu(all_series)
+        center_series = all_series_cpu[y, x]  # shape: (3, num_frames)
 
         # For simple metrics, use fast NumPy computation instead of aeon
         if distance_metric in ('euclidean', 'squared', 'manhattan'):
             # Stack neighbor series: shape (n_neighbors, 3, num_frames)
-            neighbor_series = np.array([all_series[ny, nx] for nx, ny in neighbors])
+            neighbor_series = np.array([all_series_cpu[ny, nx] for nx, ny in neighbors])
 
             # Compute distances from center to each neighbor
             diff = neighbor_series - center_series  # broadcasting
@@ -484,12 +538,12 @@ class TVWall:
                 # Manhattan: sum of absolute differences
                 distances = np.sum(np.abs(diff), axis=(1, 2))
 
-            return distances.mean()
+            return float(distances.mean())
 
-        # For DTW and other complex metrics, use aeon
+        # For DTW and other complex metrics, use aeon (CPU only)
         series_list = [center_series]
         for nx, ny in neighbors:
-            series_list.append(all_series[ny, nx])
+            series_list.append(all_series_cpu[ny, nx])
 
         stacked = np.array(series_list)
 
@@ -510,7 +564,7 @@ class TVWall:
                 raise ValueError(f"Unknown distance metric: {distance_metric}")
             distances = pairwise_func(stacked)
 
-        return distances[0, 1:].mean()
+        return float(distances[0, 1:].mean())
 
     def compute_total_dissonance(self, all_series=None, kernel_size=3,
                                   distance_metric='dtw', window=0.1, positions=None):
@@ -557,6 +611,18 @@ class TVWall:
         if all_series is None:
             all_series = self.get_all_series()
 
+        # For GPU-accelerated simple metrics, use batch computation
+        if self._gpu is not None and distance_metric in ('euclidean', 'squared', 'manhattan'):
+            all_positions = [(x, y) for y in range(self.height) for x in range(self.width)]
+            diss_dict = self.compute_batch_dissonance(
+                all_positions, all_series, kernel_size, distance_metric, window
+            )
+            dissonance_map = np.zeros((self.height, self.width))
+            for (x, y), val in diss_dict.items():
+                dissonance_map[y, x] = val
+            return dissonance_map
+
+        # CPU path
         dissonance_map = np.zeros((self.height, self.width))
         for y in range(self.height):
             for x in range(self.width):
@@ -592,7 +658,14 @@ class TVWall:
         if not positions:
             return {}
 
-        # For simple metrics, use individual computation (fast NumPy path).
+        # Use GPU acceleration for simple metrics if available
+        if self._gpu is not None and distance_metric in ('euclidean', 'squared', 'manhattan'):
+            return self._gpu.compute_batch_dissonance_gpu(
+                positions, all_series, self.get_neighbors,
+                kernel_size, distance_metric
+            )
+
+        # For simple metrics without GPU, use individual computation (fast NumPy path).
         # Batch computation only beneficial for DTW due to aeon overhead.
         if distance_metric != 'dtw':
             return {pos: self.compute_position_dissonance(pos[0], pos[1], all_series,
