@@ -85,6 +85,30 @@ cd videos && python stitch.py
 - **Pipeline**: Video → frames → TVs → UMAP embedding → RGB visualization → animation
 - **DTW (Dynamic Time Warping)**: Distance metric that accounts for time-shifts between sequences
 - **Stride**: Frame skip interval for capturing longer-term temporal patterns
+- **Color Entropy**: Shannon entropy of the color distribution in a frame. Used to filter out low-information frames (e.g., solid colors, fades to black).
+
+## Color Entropy Filtering
+
+The `min_entropy` parameter filters out frames with low color variety during video loading. This is useful because:
+- Frames that are mostly one color (e.g., fade to black) provide no useful information for TV position correlation
+- Filtering improves the signal-to-noise ratio of the temporal color data
+
+**Entropy scale (512-bin color histogram):**
+- `0`: Single color (e.g., all black, all white)
+- `1`: Two distinct colors
+- `2-3`: Very uniform, few colors
+- `4-5`: Moderate color variety (typical video frames)
+- `6-8`: High color variety (colorful scenes, noise)
+
+```python
+from tv_wall import TVWall, compute_color_entropy
+
+# Skip frames with entropy below 3.0 (removes very uniform frames)
+wall = TVWall("video.mkv", num_frames=100, min_entropy=3.0)
+
+# Check entropy of a single frame
+entropy = compute_color_entropy(frame)  # frame is (H, W, 3) uint8
+```
 
 ## DTW Pairwise Distance
 
@@ -128,6 +152,9 @@ from tv_wall import TVWall
 
 # Load video (optional: num_frames, start_frame, stride)
 wall = TVWall("video.mkv", num_frames=100, stride=2)
+
+# Load video with entropy filtering (skip low-information frames)
+wall = TVWall("video.mkv", num_frames=100, min_entropy=3.0)
 
 # Scramble all TVs randomly
 wall.scramble(seed=42)

@@ -26,6 +26,38 @@ except ImportError:
     def to_cpu(x): return x
 
 
+def compute_color_entropy(frame):
+    """
+    Compute Shannon entropy of a color image based on color histogram.
+
+    Uses a coarse 8x8x8 color quantization (512 bins) to compute the entropy
+    of the color distribution. This captures how varied the colors are in the frame.
+
+    Parameters:
+        frame (np.ndarray): RGB image of shape (height, width, 3) with uint8 values.
+
+    Returns:
+        float: Shannon entropy in bits. Range is 0 (single color) to ~9 (maximum diversity).
+               Typical values: <2 = very uniform, 2-4 = low variety, 4-6 = moderate, >6 = high variety.
+    """
+    # Quantize to 8x8x8 = 512 color bins (divide by 32 to get 0-7 range)
+    quantized = (frame // 32).astype(np.uint8)
+
+    # Convert to single index: r*64 + g*8 + b
+    color_indices = quantized[:, :, 0] * 64 + quantized[:, :, 1] * 8 + quantized[:, :, 2]
+
+    # Count occurrences of each color bin
+    counts = np.bincount(color_indices.ravel(), minlength=512)
+
+    # Convert to probabilities (exclude zero counts)
+    probs = counts[counts > 0] / counts.sum()
+
+    # Shannon entropy: -sum(p * log2(p))
+    entropy = -np.sum(probs * np.log2(probs))
+
+    return entropy
+
+
 class TVWall:
     """
     Represents a wall of CRT TVs where each TV displays a single pixel's
@@ -39,7 +71,7 @@ class TVWall:
     """
 
     def __init__(self, video_path, num_frames=None, start_frame=0, stride=1, crop_percent=100,
-                 use_gpu=True):
+                 use_gpu=True, min_entropy=0.0):
         """
         Initialize a TVWall from a video file.
 
@@ -51,11 +83,16 @@ class TVWall:
             crop_percent (float): Percentage of video to keep, cropped to center (1-100).
                                   Maintains original aspect ratio. Default: 100 (no crop).
             use_gpu (bool): Whether to use GPU acceleration if available (default: True).
+            min_entropy (float): Minimum Shannon entropy threshold for frames (default: 0.0).
+                                 Frames with entropy below this are skipped. Useful values:
+                                 0 = no filtering, 2-3 = skip very uniform frames,
+                                 4+ = only keep frames with moderate color variety.
         """
         self.video_path = video_path
         self.start_frame = start_frame
         self.stride = stride
         self.crop_percent = max(1, min(100, crop_percent))
+        self.min_entropy = min_entropy
 
         self._load_video(num_frames)
         self._apply_crop()
@@ -71,7 +108,7 @@ class TVWall:
             self._gpu = None
 
     def _load_video(self, num_frames):
-        """Load frames from the video file."""
+        """Load frames from the video file, filtering by entropy if min_entropy > 0."""
         cap = cv2.VideoCapture(self.video_path)
 
         if not cap.isOpened():
@@ -90,18 +127,53 @@ class TVWall:
             self.start_frame = max(0, total_frames - frames_span)
 
         frames = []
-        for i in tqdm(range(num_frames), desc="Loading video frames"):
-            frame_idx = self.start_frame + (i * self.stride)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
-            ret, frame = cap.read()
-            if ret:
+        skipped_count = 0
+        frame_entropies = []  # Track entropies for reporting
+
+        # If filtering by entropy, we may need to scan more frames to get num_frames accepted
+        max_frame_idx = total_frames
+        current_frame_idx = self.start_frame
+
+        desc = "Loading video frames" if self.min_entropy == 0 else f"Loading frames (entropy >= {self.min_entropy:.1f})"
+
+        with tqdm(total=num_frames, desc=desc) as pbar:
+            while len(frames) < num_frames and current_frame_idx < max_frame_idx:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
+                ret, frame = cap.read()
+
+                if not ret:
+                    break
+
                 # Convert BGR to RGB
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                # Check entropy if filtering is enabled
+                if self.min_entropy > 0:
+                    entropy = compute_color_entropy(frame)
+                    frame_entropies.append(entropy)
+
+                    if entropy < self.min_entropy:
+                        skipped_count += 1
+                        current_frame_idx += self.stride
+                        continue
+
                 frames.append(frame)
-            else:
-                break
+                pbar.update(1)
+                current_frame_idx += self.stride
 
         cap.release()
+
+        if skipped_count > 0:
+            total_considered = len(frames) + skipped_count
+            print(f"Entropy filter: kept {len(frames)}/{total_considered} frames "
+                  f"(skipped {skipped_count} with entropy < {self.min_entropy:.1f})")
+            if frame_entropies:
+                print(f"Entropy range: {min(frame_entropies):.2f} - {max(frame_entropies):.2f}, "
+                      f"mean: {np.mean(frame_entropies):.2f}")
+
+        if len(frames) == 0:
+            raise ValueError(f"No frames passed the entropy filter (min_entropy={self.min_entropy}). "
+                             "Try lowering the threshold.")
 
         self._frames = np.array(frames)
         self.num_frames = len(frames)
