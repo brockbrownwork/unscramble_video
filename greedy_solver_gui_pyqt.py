@@ -919,7 +919,7 @@ class GreedySolverGUI(QMainWindow):
                 import time
                 start_time = time.perf_counter()
 
-                self.dissonance_map = self.wall.compute_dissonance_map_gpu(
+                self.dissonance_map = self.wall.compute_dissonance_map(
                     self.current_series, kernel_size, metric
                 )
 
