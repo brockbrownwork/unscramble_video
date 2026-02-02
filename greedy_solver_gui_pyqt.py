@@ -35,7 +35,7 @@ matplotlib.use('Qt5Agg')
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-from tv_wall import TVWall
+from tv_wall import TVWall, CUPY_AVAILABLE
 
 
 class WorkerSignals(QObject):
@@ -378,6 +378,21 @@ class GreedySolverGUI(QMainWindow):
         metric_row.addWidget(self.metric_combo)
         metric_row.addStretch()
         param_layout.addLayout(metric_row)
+
+        # GPU status indicator
+        gpu_row = QHBoxLayout()
+        gpu_label = QLabel("GPU Accel:")
+        gpu_label.setFixedWidth(120)
+        gpu_row.addWidget(gpu_label)
+        if CUPY_AVAILABLE:
+            gpu_status = QLabel("✓ CuPy available")
+            gpu_status.setStyleSheet("color: #28a745; font-weight: bold;")
+        else:
+            gpu_status = QLabel("✗ CuPy not found")
+            gpu_status.setStyleSheet("color: #dc3545; font-weight: bold;")
+        gpu_row.addWidget(gpu_status)
+        gpu_row.addStretch()
+        param_layout.addLayout(gpu_row)
 
         left_layout.addWidget(param_group)
 
@@ -895,21 +910,45 @@ class GreedySolverGUI(QMainWindow):
             self.current_series = self.get_current_series()
 
             height, width = self.wall.height, self.wall.width
-            self.dissonance_map = np.zeros((height, width))
 
-            total = height * width
-            for idx, (y, x) in enumerate([(y, x) for y in range(height) for x in range(width)]):
-                self.dissonance_map[y, x] = self.wall.compute_position_dissonance(
-                    x, y, self.current_series, kernel_size, metric, window
+            # Try GPU-accelerated computation for supported metrics
+            use_gpu = CUPY_AVAILABLE and metric in ('euclidean', 'squared', 'manhattan')
+
+            if use_gpu:
+                self.signals.set_status.emit("Computing dissonance map (GPU)...")
+                import time
+                start_time = time.perf_counter()
+
+                self.dissonance_map = self.wall.compute_dissonance_map_gpu(
+                    self.current_series, kernel_size, metric
                 )
-                if idx % 100 == 0:
-                    progress = (idx + 1) / total * 100
-                    self.signals.progress.emit(progress)
+
+                elapsed = time.perf_counter() - start_time
+                self.signals.set_status.emit(f"GPU computation done in {elapsed:.2f}s")
+                self.signals.progress.emit(100)
+            else:
+                # CPU fallback
+                if not CUPY_AVAILABLE:
+                    self.signals.set_status.emit("Computing dissonance map (CPU - CuPy not available)...")
+                else:
+                    self.signals.set_status.emit(f"Computing dissonance map (CPU - {metric} not GPU-supported)...")
+
+                self.dissonance_map = np.zeros((height, width))
+                total = height * width
+                for idx, (y, x) in enumerate([(y, x) for y in range(height) for x in range(width)]):
+                    self.dissonance_map[y, x] = self.wall.compute_position_dissonance(
+                        x, y, self.current_series, kernel_size, metric, window
+                    )
+                    if idx % 100 == 0:
+                        progress = (idx + 1) / total * 100
+                        self.signals.progress.emit(progress)
 
             self.high_dissonance_positions = self._get_top_n_dissonance()
             self.signals.finished.emit()
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.signals.error.emit(f"Identification failed: {e}")
 
     def _get_top_n_dissonance(self):
@@ -1206,48 +1245,56 @@ class GreedySolverGUI(QMainWindow):
 
         diss_list = [(all_diss[pos], pos) for pos in self.high_dissonance_positions]
         diss_list.sort(reverse=True)
-        top_k_with_diss = diss_list[:topk]
-        top_positions = [pos for _, pos in top_k_with_diss]
-        diss_before = {pos: d for d, pos in top_k_with_diss}
 
-        if len(top_positions) < 2:
-            return None
+        # Double top-k until we find improvement or exceed 1000
+        current_topk = topk
+        while current_topk <= 1000:
+            top_k_with_diss = diss_list[:current_topk]
+            top_positions = [pos for _, pos in top_k_with_diss]
+            diss_before = {pos: d for d, pos in top_k_with_diss}
 
-        best_swap = None
-        best_improvement = 0
+            if len(top_positions) < 2:
+                return None
 
-        series_copy = self.current_series.copy()
-        n_positions = len(top_positions)
+            best_swap = None
+            best_improvement = 0
 
-        for i in range(n_positions):
-            for j in range(i + 1, n_positions):
-                pos1 = top_positions[i]
-                pos2 = top_positions[j]
-                x1, y1 = pos1
-                x2, y2 = pos2
+            series_copy = self.current_series.copy()
+            n_positions = len(top_positions)
 
-                diss1_before = diss_before[pos1]
-                diss2_before = diss_before[pos2]
+            for i in range(n_positions):
+                for j in range(i + 1, n_positions):
+                    pos1 = top_positions[i]
+                    pos2 = top_positions[j]
+                    x1, y1 = pos1
+                    x2, y2 = pos2
 
-                series_copy[y1, x1], series_copy[y2, x2] = \
-                    series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+                    diss1_before = diss_before[pos1]
+                    diss2_before = diss_before[pos2]
 
-                diss1_after = self.wall.compute_position_dissonance(
-                    x1, y1, series_copy, kernel_size, metric, window)
-                diss2_after = self.wall.compute_position_dissonance(
-                    x2, y2, series_copy, kernel_size, metric, window)
+                    series_copy[y1, x1], series_copy[y2, x2] = \
+                        series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
-                improvement = (diss1_before + diss2_before) - (diss1_after + diss2_after)
+                    diss1_after = self.wall.compute_position_dissonance(
+                        x1, y1, series_copy, kernel_size, metric, window)
+                    diss2_after = self.wall.compute_position_dissonance(
+                        x2, y2, series_copy, kernel_size, metric, window)
 
-                if improvement > best_improvement:
-                    best_improvement = improvement
-                    best_swap = (pos1, pos2)
+                    improvement = (diss1_before + diss2_before) - (diss1_after + diss2_after)
 
-                series_copy[y1, x1], series_copy[y2, x2] = \
-                    series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+                    if improvement > best_improvement:
+                        best_improvement = improvement
+                        best_swap = (pos1, pos2)
 
-        if best_swap is not None and best_improvement > 0:
-            return best_swap
+                    series_copy[y1, x1], series_copy[y2, x2] = \
+                        series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+
+            if best_swap is not None and best_improvement > 0:
+                return best_swap
+
+            # No improvement found, double top-k and try again
+            current_topk *= 2
+
         return None
 
     def _find_sa_swap(self):
