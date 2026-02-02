@@ -26,6 +26,7 @@ The unscramble problem is analogous: we're trying to recover spatial topology fr
 
 - **Language:** Python
 - **Core Libraries:** opencv-python, numpy, umap-learn, matplotlib, Pillow, tqdm, scipy
+- **GPU Acceleration:** cupy (optional, for fast dissonance computation)
 - **Distance Metrics:** aeon (DTW pairwise distances)
 - **ML/Evaluation:** scikit-learn (precision-recall, ROC curves)
 - **GUI:** PyQt5 (main solver GUI), tkinter (legacy experiments)
@@ -58,6 +59,7 @@ unscramble_video/
 # Install dependencies
 pip install -r requirements.txt
 pip install aeon scikit-learn  # Additional deps for experiments
+pip install cupy-cuda12x       # Optional: GPU acceleration (adjust for your CUDA version)
 
 # Run interactive GUIs
 python neighbor_dissonance_gui.py    # Visualize dissonance heatmaps
@@ -181,9 +183,14 @@ positions = [(x1, y1), (x2, y2), (x3, y3)]
 diss_dict = wall.compute_batch_dissonance(positions, all_series, kernel_size=3,
                                            distance_metric='euclidean')
 
-# Compute dissonance map for all positions
+# Compute dissonance map for all positions (CPU)
 dmap = wall.compute_dissonance_map(all_series, kernel_size=3,
                                     distance_metric='dtw', window=0.1)
+
+# Compute dissonance map using GPU (CuPy) - ~27x faster for large images
+# Supports: 'euclidean', 'squared', 'manhattan'
+dmap = wall.compute_dissonance_map_gpu(all_series, kernel_size=3,
+                                        distance_metric='euclidean')
 
 # Compute total dissonance (sum over positions)
 total = wall.compute_total_dissonance(all_series, positions=[(x1,y1), (x2,y2)])
@@ -297,7 +304,18 @@ The solver uses several optimizations for fast swap evaluation with high Top-N v
 
 4. **Batch dissonance**: `compute_batch_dissonance()` computes dissonance for multiple positions efficiently, using DTW batching when beneficial
 
-**Performance with Top-N = 2000:**
+5. **GPU acceleration**: `compute_dissonance_map_gpu()` uses CuPy for massively parallel dissonance computation on NVIDIA GPUs
+
+**GPU Performance (Identify button):**
+
+| Image Size | Pixels | CPU Time | GPU Time | Speedup |
+|------------|--------|----------|----------|---------|
+| 384×216 | 82,944 | 4.6s | 1.1s | 4x |
+| 640×360 | 230,400 | 13.9s | 0.5s | **27x** |
+
+The GUI automatically uses GPU when CuPy is available and the metric is euclidean/squared/manhattan. Falls back to CPU for DTW or when CuPy isn't installed.
+
+**CPU Performance with Top-N = 2000:**
 - Initial dissonance computation: ~110ms (euclidean)
 - Per-step swap evaluation (top-K=100): ~636ms for 4950 swaps
 - Each swap evaluation: ~0.13ms
