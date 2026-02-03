@@ -1106,6 +1106,9 @@ class GreedySolverGUI(QMainWindow):
                 correct = self.count_correct_positions()
                 self.correct_count_history.append(correct)
 
+            # Track iterations for periodic memory cleanup
+            cleanup_interval = 50
+
             while self.solver_running and self.iteration < max_iters:
                 while self.solver_paused and self.solver_running:
                     time.sleep(0.1)
@@ -1158,12 +1161,24 @@ class GreedySolverGUI(QMainWindow):
                 if delay_ms > 0:
                     time.sleep(delay_ms / 1000.0)
 
+                # Periodic GPU memory cleanup to prevent fragmentation
+                if self.iteration % cleanup_interval == 0 and self.wall._gpu is not None:
+                    mem_usage = self.wall._gpu.get_memory_usage_percent()
+                    if mem_usage > 80:
+                        self.signals.set_status.emit(f"GPU memory {mem_usage:.0f}% - cleaning up...")
+                    self.wall._gpu.cleanup_memory()
+
             self.signals.set_status.emit(f"Solver stopped at iteration {self.iteration}")
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             self.signals.error.emit(f"Solver failed: {e}")
         finally:
             self.solver_running = False
+            # Final GPU memory cleanup
+            if self.wall is not None and self.wall._gpu is not None:
+                self.wall._gpu.cleanup_memory()
             QTimer.singleShot(0, self._on_solver_done)
 
     def _find_best_swap(self, strategy):

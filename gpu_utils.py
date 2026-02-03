@@ -79,6 +79,33 @@ class GPUAccelerator:
         """Check if GPU acceleration is active."""
         return self.use_gpu
 
+    def get_memory_info(self):
+        """
+        Get GPU memory usage information.
+
+        Returns:
+            tuple: (free_bytes, total_bytes) or (None, None) if not using GPU.
+        """
+        if not self.use_gpu:
+            return (None, None)
+        try:
+            mem_info = cp.cuda.Device().mem_info
+            return (mem_info[0], mem_info[1])  # (free, total)
+        except Exception:
+            return (None, None)
+
+    def get_memory_usage_percent(self):
+        """
+        Get GPU memory usage as a percentage.
+
+        Returns:
+            float: Percentage of GPU memory in use (0-100), or 0 if not using GPU.
+        """
+        free, total = self.get_memory_info()
+        if free is None or total is None or total == 0:
+            return 0.0
+        return 100.0 * (1.0 - free / total)
+
     def cache_frames(self, frames):
         """
         Cache video frames on GPU.
@@ -317,6 +344,9 @@ class GPUAccelerator:
         # Transfer to CPU for dict construction
         if self.use_gpu:
             mean_dissonance_cpu = cp.asnumpy(mean_dissonance)
+            # Clean up intermediate arrays
+            del neighbor_series, diff, distances
+            cp.get_default_memory_pool().free_all_blocks()
         else:
             mean_dissonance_cpu = mean_dissonance
 
@@ -632,6 +662,14 @@ class GPUAccelerator:
 
         # Sort by improvement (highest first)
         results.sort(key=lambda x: x[0], reverse=True)
+
+        # Clean up large intermediate arrays to free GPU memory
+        if self.use_gpu:
+            del pos1_neighbor_series, pos2_neighbor_series
+            del diff1_before, diff2_before, diff1_after, diff2_after
+            del pos1_neighbor_series_after, pos2_neighbor_series_after
+            cp.get_default_memory_pool().free_all_blocks()
+
         return results
 
     def sync(self):
@@ -639,14 +677,32 @@ class GPUAccelerator:
         if self.use_gpu:
             cp.cuda.Stream.null.synchronize()
 
+    def cleanup_memory(self):
+        """
+        Clean up GPU memory pools without invalidating cached data.
+
+        Call this periodically during long-running operations to prevent
+        memory fragmentation. Unlike free_memory(), this preserves cached
+        frames and permutations.
+        """
+        if self.use_gpu:
+            # Sync to ensure all operations complete before cleanup
+            cp.cuda.Stream.null.synchronize()
+            # Free unused blocks in the memory pool
+            cp.get_default_memory_pool().free_all_blocks()
+            # Also clean up pinned memory pool
+            cp.get_default_pinned_memory_pool().free_all_blocks()
+
     def free_memory(self):
-        """Free cached GPU memory."""
+        """Free all cached GPU memory and clear memory pools."""
         self._frames_gpu = None
         self._perm_x_gpu = None
         self._perm_y_gpu = None
         self._all_series_gpu = None
         if self.use_gpu:
+            cp.cuda.Stream.null.synchronize()
             cp.get_default_memory_pool().free_all_blocks()
+            cp.get_default_pinned_memory_pool().free_all_blocks()
 
 
 # Convenience function to check GPU availability
