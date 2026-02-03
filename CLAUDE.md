@@ -29,7 +29,7 @@ The unscramble problem is analogous: we're trying to recover spatial topology fr
 - **GPU Acceleration:** cupy (optional, for fast dissonance computation)
 - **Distance Metrics:** aeon (DTW pairwise distances)
 - **ML/Evaluation:** scikit-learn (precision-recall, ROC curves)
-- **GUI:** PyQt5 (main solver GUI), tkinter (legacy experiments)
+- **GUI:** PyQt5 (main solver GUI)
 - **External Tools:** ffmpeg (via subprocess)
 - **Development:** Jupyter Notebooks for experimentation
 
@@ -38,15 +38,11 @@ The unscramble problem is analogous: we're trying to recover spatial topology fr
 ```
 unscramble_video/
 ├── tv_wall.py                         # TVWall class - core abstraction
+├── gpu_utils.py                       # GPU acceleration utilities (CuPy)
 ├── neighbor_dissonance_gui.py         # Interactive dissonance visualization
-├── greedy_solver_gui.py               # Interactive solver (tkinter, legacy)
 ├── greedy_solver_gui_pyqt.py          # Interactive solver (PyQt5, cute pink theme)
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
-├── test_tv_wall.py                    # Unit tests for TVWall
-├── unscramble.py                      # Original UMAP approach (Euclidean)
-├── unscramble_dtw.py                  # DTW-based UMAP approach
-├── videos/
-│   └── stitch.py                      # Video concatenation utility
+├── benchmark_gpu.py                   # GPU vs CPU performance benchmarking
 ├── *.ipynb                            # Experimental notebooks
 ├── *.mkv                              # Input video files
 ├── *.gif                              # Output animations
@@ -64,17 +60,12 @@ pip install cupy-cuda12x       # Optional: GPU acceleration (adjust for your CUD
 # Run interactive GUIs
 python neighbor_dissonance_gui.py    # Visualize dissonance heatmaps
 python greedy_solver_gui_pyqt.py     # Run solver with animation (PyQt5, pink theme)
-python greedy_solver_gui.py          # Run solver (tkinter, legacy)
 
 # Run CLI experiment
 python experiment_neighbor_dissonance.py -v video.mkv -n 20 -f 100
 
-# Run original UMAP scripts
-python unscramble.py
-python unscramble_dtw.py
-
-# Stitch videos
-cd videos && python stitch.py
+# Run GPU benchmark
+python benchmark_gpu.py
 ```
 
 ## Key Concepts
@@ -269,7 +260,7 @@ dissonance(X) = mean( distance(X, neighbor) for each neighbor N )
 
 ## Possible Solving Strategies
 
-The `greedy_solver_gui.py` implements three strategies:
+The `greedy_solver_gui_pyqt.py` implements three strategies:
 
 1. **Highest Dissonance**: Find the highest dissonance position, try swapping with each neighbor, keep the best improvement
 
@@ -373,8 +364,6 @@ Interactive solver with real-time animation (PyQt5 with cute pink theme):
 - Tune parameters: top-K, max iterations, temperature, cooling rate
 - View progress charts and correctness maps
 - Cute pink UI theme with rounded corners, gradients, and hover effects
-
-There's also a legacy tkinter version (`greedy_solver_gui.py`) with the same functionality.
 
 ## CLI Experiment (`experiment_neighbor_dissonance.py`)
 
