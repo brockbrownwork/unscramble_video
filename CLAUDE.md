@@ -322,7 +322,9 @@ The solver uses several optimizations for fast swap evaluation with high Top-N v
 
 4. **Batch dissonance**: `compute_batch_dissonance()` computes dissonance for multiple positions efficiently, using DTW batching when beneficial
 
-5. **GPU acceleration**: `compute_dissonance_map_gpu()` uses CuPy for massively parallel dissonance computation on NVIDIA GPUs
+5. **GPU acceleration for Identify**: `compute_dissonance_map_gpu()` uses CuPy for massively parallel dissonance computation on NVIDIA GPUs
+
+6. **GPU acceleration for Solve**: `evaluate_swap_batch()` evaluates ALL swap candidates in a single vectorized GPU operation, avoiding thousands of individual kernel launches
 
 **GPU Performance (Identify button):**
 
@@ -331,12 +333,20 @@ The solver uses several optimizations for fast swap evaluation with high Top-N v
 | 384×216 | 82,944 | 4.6s | 1.1s | 4x |
 | 640×360 | 230,400 | 13.9s | 0.5s | **27x** |
 
-The GUI automatically uses GPU when CuPy is available and the metric is euclidean/squared/manhattan. Falls back to CPU for DTW or when CuPy isn't installed.
+**GPU Performance (Solve step with top-K=100):**
 
-**CPU Performance with Top-N = 2000:**
-- Initial dissonance computation: ~110ms (euclidean)
-- Per-step swap evaluation (top-K=100): ~636ms for 4950 swaps
-- Each swap evaluation: ~0.13ms
+With top-K=100, there are 4,950 swap candidates to evaluate per iteration:
+- **CPU**: ~636ms (9,900 individual dissonance calls)
+- **GPU batched**: Single vectorized operation evaluating all 4,950 swaps in parallel
+
+The GPU batched evaluation:
+- Transfers all position data to GPU once
+- Computes all before/after dissonances in parallel
+- Handles neighbor boundary conditions vectorized
+- Correctly accounts for when swapped positions are neighbors of each other
+- Returns results sorted by improvement
+
+The GUI automatically uses GPU when CuPy is available and the metric is euclidean/squared/manhattan. Falls back to CPU for DTW or when CuPy isn't installed.
 
 ### GUI Features
 

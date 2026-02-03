@@ -1191,41 +1191,62 @@ class GreedySolverGUI(QMainWindow):
         )
 
         best_pos = max(self.high_dissonance_positions, key=lambda p: all_diss[p])
-        x1, y1 = best_pos
-        diss_best_before = all_diss[best_pos]
 
-        best_swap = None
-        best_improvement = 0
+        # Check if we can use GPU-accelerated batch evaluation
+        use_gpu_batch = (CUPY_AVAILABLE and
+                         self.wall._gpu is not None and
+                         metric in ('euclidean', 'squared', 'manhattan'))
 
-        series_copy = self.current_series.copy()
+        # Build swap candidates: best_pos with every other position
+        swap_candidates = [(best_pos, other_pos)
+                          for other_pos in self.high_dissonance_positions
+                          if other_pos != best_pos]
 
-        for other_pos in self.high_dissonance_positions:
-            if other_pos == best_pos:
-                continue
+        if not swap_candidates:
+            return None
 
-            x2, y2 = other_pos
-            diss_other_before = all_diss[other_pos]
+        if use_gpu_batch:
+            # Use fully vectorized GPU evaluation
+            results = self.wall._gpu.evaluate_swap_batch(
+                swap_candidates, self.current_series,
+                self.wall.get_neighbors, kernel_size, metric
+            )
+            if results and results[0][0] > 0:
+                return results[0][1]  # Return the best swap
+            return None
+        else:
+            # CPU fallback
+            x1, y1 = best_pos
+            diss_best_before = all_diss[best_pos]
+            best_swap = None
+            best_improvement = 0
 
-            series_copy[y1, x1], series_copy[y2, x2] = \
-                series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+            series_copy = self.current_series.copy()
 
-            diss_best_after = self.wall.compute_position_dissonance(
-                x1, y1, series_copy, kernel_size, metric, window)
-            diss_other_after = self.wall.compute_position_dissonance(
-                x2, y2, series_copy, kernel_size, metric, window)
+            for _, other_pos in swap_candidates:
+                x2, y2 = other_pos
+                diss_other_before = all_diss[other_pos]
 
-            improvement = (diss_best_before + diss_other_before) - (diss_best_after + diss_other_after)
+                series_copy[y1, x1], series_copy[y2, x2] = \
+                    series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
-            if improvement > best_improvement:
-                best_improvement = improvement
-                best_swap = other_pos
+                diss_best_after = self.wall.compute_position_dissonance(
+                    x1, y1, series_copy, kernel_size, metric, window)
+                diss_other_after = self.wall.compute_position_dissonance(
+                    x2, y2, series_copy, kernel_size, metric, window)
 
-            series_copy[y1, x1], series_copy[y2, x2] = \
-                series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+                improvement = (diss_best_before + diss_other_before) - (diss_best_after + diss_other_after)
 
-        if best_swap is not None and best_improvement > 0:
-            return (best_pos, best_swap)
-        return None
+                if improvement > best_improvement:
+                    best_improvement = improvement
+                    best_swap = other_pos
+
+                series_copy[y1, x1], series_copy[y2, x2] = \
+                    series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+
+            if best_swap is not None and best_improvement > 0:
+                return (best_pos, best_swap)
+            return None
 
     def _find_top_k_swap(self):
         if not self.high_dissonance_positions:
@@ -1246,26 +1267,44 @@ class GreedySolverGUI(QMainWindow):
         diss_list = [(all_diss[pos], pos) for pos in self.high_dissonance_positions]
         diss_list.sort(reverse=True)
 
+        # Check if we can use GPU-accelerated batch evaluation
+        use_gpu_batch = (CUPY_AVAILABLE and
+                         self.wall._gpu is not None and
+                         metric in ('euclidean', 'squared', 'manhattan'))
+
         # Double top-k until we find improvement or exceed 1000
         current_topk = topk
         while current_topk <= 1000:
             top_k_with_diss = diss_list[:current_topk]
             top_positions = [pos for _, pos in top_k_with_diss]
-            diss_before = {pos: d for d, pos in top_k_with_diss}
 
             if len(top_positions) < 2:
                 return None
 
-            best_swap = None
-            best_improvement = 0
-
-            series_copy = self.current_series.copy()
+            # Build all swap candidates
             n_positions = len(top_positions)
-
+            swap_candidates = []
             for i in range(n_positions):
                 for j in range(i + 1, n_positions):
-                    pos1 = top_positions[i]
-                    pos2 = top_positions[j]
+                    swap_candidates.append((top_positions[i], top_positions[j]))
+
+            if use_gpu_batch:
+                # Use fully vectorized GPU evaluation
+                results = self.wall._gpu.evaluate_swap_batch(
+                    swap_candidates, self.current_series,
+                    self.wall.get_neighbors, kernel_size, metric
+                )
+                if results and results[0][0] > 0:
+                    return results[0][1]  # Return the best swap
+            else:
+                # CPU fallback with individual evaluation
+                diss_before = {pos: d for d, pos in top_k_with_diss}
+                best_swap = None
+                best_improvement = 0
+
+                series_copy = self.current_series.copy()
+
+                for pos1, pos2 in swap_candidates:
                     x1, y1 = pos1
                     x2, y2 = pos2
 
@@ -1289,8 +1328,8 @@ class GreedySolverGUI(QMainWindow):
                     series_copy[y1, x1], series_copy[y2, x2] = \
                         series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
-            if best_swap is not None and best_improvement > 0:
-                return best_swap
+                if best_swap is not None and best_improvement > 0:
+                    return best_swap
 
             # No improvement found, double top-k and try again
             current_topk *= 2

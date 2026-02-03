@@ -471,14 +471,17 @@ class GPUAccelerator:
     def evaluate_swap_batch(self, swap_candidates, all_series, get_neighbors_func,
                             kernel_size=3, distance_metric='euclidean'):
         """
-        Evaluate multiple swap candidates in parallel.
+        Evaluate multiple swap candidates in parallel using fully vectorized GPU operations.
+
+        This method computes the improvement for ALL swap candidates in a single batched
+        operation, avoiding the overhead of thousands of individual kernel launches.
 
         Parameters:
             swap_candidates: List of ((x1, y1), (x2, y2)) swap pairs.
-            all_series: Current series array.
-            get_neighbors_func: Function to get neighbors.
+            all_series: Current series array of shape (height, width, 3, num_frames).
+            get_neighbors_func: Function to get neighbors (not used in vectorized path).
             kernel_size: Neighborhood kernel size.
-            distance_metric: Distance metric.
+            distance_metric: Distance metric ('euclidean', 'squared', 'manhattan').
 
         Returns:
             List of (improvement, swap_pair) tuples, sorted by improvement descending.
@@ -492,45 +495,140 @@ class GPUAccelerator:
         if self.use_gpu and not is_gpu_array(all_series):
             all_series = cp.asarray(all_series)
 
-        results = []
+        height, width, channels, num_frames = all_series.shape
+        n_swaps = len(swap_candidates)
+        radius = kernel_size // 2
 
-        for pos1, pos2 in swap_candidates:
-            x1, y1 = pos1
-            x2, y2 = pos2
+        # Build neighbor offsets (same for all positions)
+        offsets = []
+        for dx in range(-radius, radius + 1):
+            for dy in range(-radius, radius + 1):
+                if dx != 0 or dy != 0:
+                    offsets.append((dx, dy))
+        n_offsets = len(offsets)
+        offsets_dx = xp.array([o[0] for o in offsets], dtype=xp.int32)
+        offsets_dy = xp.array([o[1] for o in offsets], dtype=xp.int32)
 
-            # Get neighbors for both positions
-            neighbors1 = get_neighbors_func(x1, y1, kernel_size)
-            neighbors2 = get_neighbors_func(x2, y2, kernel_size)
+        # Extract all position coordinates
+        # pos1 and pos2 for each swap candidate
+        pos1_x = xp.array([s[0][0] for s in swap_candidates], dtype=xp.int32)
+        pos1_y = xp.array([s[0][1] for s in swap_candidates], dtype=xp.int32)
+        pos2_x = xp.array([s[1][0] for s in swap_candidates], dtype=xp.int32)
+        pos2_y = xp.array([s[1][1] for s in swap_candidates], dtype=xp.int32)
 
-            # Compute current dissonance
-            diss1_before = self.compute_position_dissonance(
-                x1, y1, all_series, neighbors1, distance_metric
-            )
-            diss2_before = self.compute_position_dissonance(
-                x2, y2, all_series, neighbors2, distance_metric
-            )
+        # Get series for pos1 and pos2: shape (n_swaps, 3, num_frames)
+        series1 = all_series[pos1_y, pos1_x]  # Series currently at pos1
+        series2 = all_series[pos2_y, pos2_x]  # Series currently at pos2
 
-            # Simulate swap by creating swapped view
-            # Make a shallow copy and swap the relevant entries
-            if self.use_gpu:
-                series_copy = all_series.copy()
-            else:
-                series_copy = all_series.copy()
+        # Compute neighbor coordinates for pos1: (n_offsets, n_swaps)
+        pos1_neighbor_x = offsets_dx[:, None] + pos1_x[None, :]
+        pos1_neighbor_y = offsets_dy[:, None] + pos1_y[None, :]
+        pos1_valid = (pos1_neighbor_x >= 0) & (pos1_neighbor_x < width) & \
+                     (pos1_neighbor_y >= 0) & (pos1_neighbor_y < height)
 
-            series_copy[y1, x1], series_copy[y2, x2] = (
-                series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
-            )
+        # Compute neighbor coordinates for pos2: (n_offsets, n_swaps)
+        pos2_neighbor_x = offsets_dx[:, None] + pos2_x[None, :]
+        pos2_neighbor_y = offsets_dy[:, None] + pos2_y[None, :]
+        pos2_valid = (pos2_neighbor_x >= 0) & (pos2_neighbor_x < width) & \
+                     (pos2_neighbor_y >= 0) & (pos2_neighbor_y < height)
 
-            # Compute new dissonance
-            diss1_after = self.compute_position_dissonance(
-                x1, y1, series_copy, neighbors1, distance_metric
-            )
-            diss2_after = self.compute_position_dissonance(
-                x2, y2, series_copy, neighbors2, distance_metric
-            )
+        # Clip for safe indexing
+        pos1_neighbor_x_clipped = xp.clip(pos1_neighbor_x, 0, width - 1)
+        pos1_neighbor_y_clipped = xp.clip(pos1_neighbor_y, 0, height - 1)
+        pos2_neighbor_x_clipped = xp.clip(pos2_neighbor_x, 0, width - 1)
+        pos2_neighbor_y_clipped = xp.clip(pos2_neighbor_y, 0, height - 1)
 
-            improvement = (diss1_before + diss2_before) - (diss1_after + diss2_after)
-            results.append((improvement, (pos1, pos2)))
+        # Get neighbor series: (n_offsets, n_swaps, 3, num_frames)
+        pos1_neighbor_series = all_series[pos1_neighbor_y_clipped, pos1_neighbor_x_clipped]
+        pos2_neighbor_series = all_series[pos2_neighbor_y_clipped, pos2_neighbor_x_clipped]
+
+        # ============ BEFORE SWAP ============
+        # Dissonance of pos1 before: compare series1 to its neighbors
+        diff1_before = pos1_neighbor_series - series1[None, :, :, :]
+        # Dissonance of pos2 before: compare series2 to its neighbors
+        diff2_before = pos2_neighbor_series - series2[None, :, :, :]
+
+        if distance_metric == 'euclidean':
+            dist1_before = xp.sqrt(xp.sum(diff1_before ** 2, axis=(2, 3)))
+            dist2_before = xp.sqrt(xp.sum(diff2_before ** 2, axis=(2, 3)))
+        elif distance_metric == 'squared':
+            dist1_before = xp.sum(diff1_before ** 2, axis=(2, 3))
+            dist2_before = xp.sum(diff2_before ** 2, axis=(2, 3))
+        elif distance_metric == 'manhattan':
+            dist1_before = xp.sum(xp.abs(diff1_before), axis=(2, 3))
+            dist2_before = xp.sum(xp.abs(diff2_before), axis=(2, 3))
+        else:
+            raise ValueError(f"Unsupported metric: {distance_metric}")
+
+        # Mask invalid and compute mean: (n_swaps,)
+        dist1_before = xp.where(pos1_valid, dist1_before, 0.0)
+        dist2_before = xp.where(pos2_valid, dist2_before, 0.0)
+        count1 = xp.sum(pos1_valid.astype(xp.float32), axis=0)
+        count2 = xp.sum(pos2_valid.astype(xp.float32), axis=0)
+        diss1_before = xp.sum(dist1_before, axis=0) / xp.maximum(count1, 1.0)
+        diss2_before = xp.sum(dist2_before, axis=0) / xp.maximum(count2, 1.0)
+
+        # ============ AFTER SWAP ============
+        # After swap: series2 is at pos1, series1 is at pos2
+        # BUT we also need to handle when pos1 is a neighbor of pos2 or vice versa
+
+        # For pos1's neighbors: if a neighbor IS pos2, use series1 (what will be there after swap)
+        # Otherwise use the original neighbor series
+        # Check which neighbors of pos1 are actually pos2
+        is_pos2_neighbor_of_pos1 = (pos1_neighbor_x == pos2_x[None, :]) & \
+                                    (pos1_neighbor_y == pos2_y[None, :])
+        # Check which neighbors of pos2 are actually pos1
+        is_pos1_neighbor_of_pos2 = (pos2_neighbor_x == pos1_x[None, :]) & \
+                                    (pos2_neighbor_y == pos1_y[None, :])
+
+        # After swap at pos1: series2 is there, compare to neighbors
+        # Neighbors are the same EXCEPT if the neighbor is pos2 (then it has series1)
+        pos1_neighbor_series_after = xp.where(
+            is_pos2_neighbor_of_pos1[:, :, None, None],
+            series1[None, :, :, :],  # If neighbor is pos2, it now has series1
+            pos1_neighbor_series     # Otherwise unchanged
+        )
+
+        # After swap at pos2: series1 is there, compare to neighbors
+        pos2_neighbor_series_after = xp.where(
+            is_pos1_neighbor_of_pos2[:, :, None, None],
+            series2[None, :, :, :],  # If neighbor is pos1, it now has series2
+            pos2_neighbor_series     # Otherwise unchanged
+        )
+
+        # Dissonance of pos1 after: compare series2 (now at pos1) to updated neighbors
+        diff1_after = pos1_neighbor_series_after - series2[None, :, :, :]
+        # Dissonance of pos2 after: compare series1 (now at pos2) to updated neighbors
+        diff2_after = pos2_neighbor_series_after - series1[None, :, :, :]
+
+        if distance_metric == 'euclidean':
+            dist1_after = xp.sqrt(xp.sum(diff1_after ** 2, axis=(2, 3)))
+            dist2_after = xp.sqrt(xp.sum(diff2_after ** 2, axis=(2, 3)))
+        elif distance_metric == 'squared':
+            dist1_after = xp.sum(diff1_after ** 2, axis=(2, 3))
+            dist2_after = xp.sum(diff2_after ** 2, axis=(2, 3))
+        elif distance_metric == 'manhattan':
+            dist1_after = xp.sum(xp.abs(diff1_after), axis=(2, 3))
+            dist2_after = xp.sum(xp.abs(diff2_after), axis=(2, 3))
+
+        # Mask invalid and compute mean
+        dist1_after = xp.where(pos1_valid, dist1_after, 0.0)
+        dist2_after = xp.where(pos2_valid, dist2_after, 0.0)
+        diss1_after = xp.sum(dist1_after, axis=0) / xp.maximum(count1, 1.0)
+        diss2_after = xp.sum(dist2_after, axis=0) / xp.maximum(count2, 1.0)
+
+        # Compute improvement for all swaps
+        improvements = (diss1_before + diss2_before) - (diss1_after + diss2_after)
+
+        # Transfer to CPU
+        if self.use_gpu:
+            improvements_cpu = cp.asnumpy(improvements)
+        else:
+            improvements_cpu = improvements
+
+        # Build results list
+        results = [(float(improvements_cpu[i]), swap_candidates[i])
+                   for i in range(n_swaps)]
 
         # Sort by improvement (highest first)
         results.sort(key=lambda x: x[0], reverse=True)
