@@ -20,6 +20,9 @@ import numpy as np
 from PIL import Image
 import threading
 import time
+import logging
+from collections import defaultdict
+from datetime import datetime
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -36,6 +39,133 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 from tv_wall import TVWall, CUPY_AVAILABLE
+
+
+# =============================================================================
+# TIMING INSTRUMENTATION
+# =============================================================================
+
+class PerformanceLogger:
+    """Logs timing data to a file for performance analysis."""
+
+    def __init__(self, log_file="solver_timing.log"):
+        self.log_file = log_file
+        self.timings = defaultdict(list)
+        self.current_iteration = 0
+        self._setup_logger()
+
+    def _setup_logger(self):
+        """Setup file logger for timing data."""
+        # Create a separate logger for timing
+        self.logger = logging.getLogger('solver_timing')
+        self.logger.setLevel(logging.DEBUG)
+        self.logger.handlers = []  # Clear any existing handlers
+
+        # File handler with timestamp in filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file = f"solver_timing_{timestamp}.log"
+        fh = logging.FileHandler(self.log_file, mode='w')
+        fh.setLevel(logging.DEBUG)
+
+        # Simple format for easy parsing
+        formatter = logging.Formatter('%(message)s')
+        fh.setFormatter(formatter)
+        self.logger.addHandler(fh)
+
+        # Write header
+        self.logger.info("# Solver Performance Timing Log")
+        self.logger.info(f"# Started: {datetime.now().isoformat()}")
+        self.logger.info("#" + "=" * 70)
+        self.logger.info("")
+
+    def log_timing(self, operation, duration_ms, extra_info=""):
+        """Log a timing measurement."""
+        self.timings[operation].append(duration_ms)
+        info_str = f" | {extra_info}" if extra_info else ""
+        self.logger.info(f"[iter={self.current_iteration:04d}] {operation}: {duration_ms:.2f}ms{info_str}")
+
+    def set_iteration(self, iteration):
+        """Set the current iteration number."""
+        self.current_iteration = iteration
+
+    def log_iteration_summary(self, total_time_ms):
+        """Log a summary for the current iteration."""
+        self.logger.info(f"[iter={self.current_iteration:04d}] TOTAL_ITERATION: {total_time_ms:.2f}ms")
+        self.logger.info("")
+
+    def log_summary(self):
+        """Log overall statistics at the end."""
+        self.logger.info("")
+        self.logger.info("#" + "=" * 70)
+        self.logger.info("# SUMMARY STATISTICS")
+        self.logger.info("#" + "=" * 70)
+
+        for operation, times in sorted(self.timings.items()):
+            if times:
+                arr = np.array(times)
+                self.logger.info(f"# {operation}:")
+                self.logger.info(f"#   count: {len(arr)}")
+                self.logger.info(f"#   total: {arr.sum():.1f}ms")
+                self.logger.info(f"#   mean:  {arr.mean():.2f}ms")
+                self.logger.info(f"#   std:   {arr.std():.2f}ms")
+                self.logger.info(f"#   min:   {arr.min():.2f}ms")
+                self.logger.info(f"#   max:   {arr.max():.2f}ms")
+                self.logger.info(f"#   p50:   {np.percentile(arr, 50):.2f}ms")
+                self.logger.info(f"#   p95:   {np.percentile(arr, 95):.2f}ms")
+                self.logger.info("")
+
+        self.logger.info(f"# Log file: {self.log_file}")
+
+    def close(self):
+        """Close the logger and write final summary."""
+        self.log_summary()
+        for handler in self.logger.handlers:
+            handler.close()
+
+
+# Global performance logger instance
+perf_logger = None
+
+
+def get_perf_logger():
+    """Get or create the global performance logger."""
+    global perf_logger
+    if perf_logger is None:
+        perf_logger = PerformanceLogger()
+    return perf_logger
+
+
+def reset_perf_logger():
+    """Reset the global performance logger for a new run."""
+    global perf_logger
+    if perf_logger is not None:
+        try:
+            perf_logger.close()
+        except:
+            pass
+    perf_logger = PerformanceLogger()
+
+
+class TimingContext:
+    """Context manager for timing code blocks."""
+
+    def __init__(self, operation, extra_info=""):
+        self.operation = operation
+        self.extra_info = extra_info
+        self.start_time = None
+
+    def __enter__(self):
+        self.start_time = time.perf_counter()
+        return self
+
+    def __exit__(self, *args):
+        elapsed_ms = (time.perf_counter() - self.start_time) * 1000
+        get_perf_logger().log_timing(self.operation, elapsed_ms, self.extra_info)
+
+
+# =============================================================================
+# END TIMING INSTRUMENTATION
+# =============================================================================
 
 
 class WorkerSignals(QObject):
@@ -184,6 +314,8 @@ class MetricsGraphWidget(QWidget):
 
     def update_graphs(self, dissonance_history, correct_history, total_positions):
         """Update all graphs with new data."""
+        graph_start = time.perf_counter()
+
         if not dissonance_history:
             self._init_empty_plots()
             return
@@ -256,6 +388,15 @@ class MetricsGraphWidget(QWidget):
             self._style_axis(self.ax_accuracy)
             self.fig_accuracy.tight_layout()
             self.canvas_accuracy.draw()
+
+        # Log graph update time (only useful during solver runs)
+        graph_time = (time.perf_counter() - graph_start) * 1000
+        try:
+            logger = get_perf_logger()
+            if logger.current_iteration > 0:
+                logger.log_timing("update_graphs", graph_time)
+        except:
+            pass  # Logger may not be initialized
 
     def _style_axis(self, ax):
         """Apply pink theme styling to axis."""
@@ -1100,8 +1241,20 @@ class GreedySolverGUI(QMainWindow):
             delay_ms = int(self.delay_edit.text())
             strategy = self.strategy_combo.currentText()
 
+            # Initialize performance logger for this run (fresh log file each time)
+            reset_perf_logger()
+            logger = get_perf_logger()
+            logger.logger.info(f"# Strategy: {strategy}")
+            logger.logger.info(f"# Max iterations: {max_iters}")
+            logger.logger.info(f"# High-diss positions: {len(self.high_dissonance_positions)}")
+            logger.logger.info(f"# Top-K: {self.topk_edit.text()}")
+            logger.logger.info(f"# Metric: {self.metric_combo.currentText()}")
+            logger.logger.info(f"# GPU enabled: {self.wall._gpu is not None}")
+            logger.logger.info("")
+
             if not self.total_dissonance_history:
-                total_d = self._compute_high_diss_total()
+                with TimingContext("compute_initial_dissonance"):
+                    total_d = self._compute_high_diss_total()
                 self.total_dissonance_history.append(total_d)
                 correct = self.count_correct_positions()
                 self.correct_count_history.append(correct)
@@ -1110,13 +1263,18 @@ class GreedySolverGUI(QMainWindow):
             cleanup_interval = 50
 
             while self.solver_running and self.iteration < max_iters:
+                iteration_start = time.perf_counter()
+                logger.set_iteration(self.iteration)
+
                 while self.solver_paused and self.solver_running:
                     time.sleep(0.1)
 
                 if not self.solver_running:
                     break
 
-                best_swap = self._find_best_swap(strategy)
+                # Time the swap finding
+                with TimingContext("find_best_swap", f"strategy={strategy}"):
+                    best_swap = self._find_best_swap(strategy)
 
                 if best_swap is not None:
                     self.pending_swap = best_swap
@@ -1124,15 +1282,17 @@ class GreedySolverGUI(QMainWindow):
                     self.show_pre_swap = True
 
                     # Use synchronized display update - wait for GUI thread to finish
-                    self.display_done_event.clear()
-                    self.signals.update_display_sync.emit()
-                    # Wait for display to complete (with timeout to avoid deadlock)
-                    self.display_done_event.wait(timeout=2.0)
+                    with TimingContext("display_sync_wait"):
+                        self.display_done_event.clear()
+                        self.signals.update_display_sync.emit()
+                        # Wait for display to complete (with timeout to avoid deadlock)
+                        self.display_done_event.wait(timeout=2.0)
 
                     if not self.solver_running:
                         break
 
-                    self._execute_swap(best_swap, strategy)
+                    with TimingContext("execute_swap"):
+                        self._execute_swap(best_swap, strategy)
                     self.show_pre_swap = False
                     improved = True
                 else:
@@ -1142,16 +1302,21 @@ class GreedySolverGUI(QMainWindow):
 
                 self.iteration += 1
 
-                total_d = self._compute_high_diss_total()
+                with TimingContext("compute_high_diss_total"):
+                    total_d = self._compute_high_diss_total()
                 self.total_dissonance_history.append(total_d)
-                correct = self.count_correct_positions()
+
+                with TimingContext("count_correct_positions"):
+                    correct = self.count_correct_positions()
                 self.correct_count_history.append(correct)
 
                 progress = (self.iteration / max_iters) * 100
                 self.signals.progress.emit(progress)
-                self.signals.update_metrics.emit()
-                self.signals.update_display.emit()
-                self.signals.update_scramble_info.emit()
+
+                with TimingContext("emit_signals"):
+                    self.signals.update_metrics.emit()
+                    self.signals.update_display.emit()
+                    self.signals.update_scramble_info.emit()
 
                 if not improved and strategy == "greedy":
                     self.signals.set_status.emit("Converged (no improvement)")
@@ -1163,10 +1328,15 @@ class GreedySolverGUI(QMainWindow):
 
                 # Periodic GPU memory cleanup to prevent fragmentation
                 if self.iteration % cleanup_interval == 0 and self.wall._gpu is not None:
-                    mem_usage = self.wall._gpu.get_memory_usage_percent()
-                    if mem_usage > 80:
-                        self.signals.set_status.emit(f"GPU memory {mem_usage:.0f}% - cleaning up...")
-                    self.wall._gpu.cleanup_memory()
+                    with TimingContext("gpu_memory_cleanup"):
+                        mem_usage = self.wall._gpu.get_memory_usage_percent()
+                        if mem_usage > 80:
+                            self.signals.set_status.emit(f"GPU memory {mem_usage:.0f}% - cleaning up...")
+                        self.wall._gpu.cleanup_memory()
+
+                # Log iteration summary
+                iteration_time_ms = (time.perf_counter() - iteration_start) * 1000
+                logger.log_iteration_summary(iteration_time_ms)
 
             self.signals.set_status.emit(f"Solver stopped at iteration {self.iteration}")
 
@@ -1176,6 +1346,12 @@ class GreedySolverGUI(QMainWindow):
             self.signals.error.emit(f"Solver failed: {e}")
         finally:
             self.solver_running = False
+            # Write summary and close logger
+            logger = get_perf_logger()
+            logger.close()
+            log_path = os.path.abspath(logger.log_file)
+            print(f"\n*** Performance log written to: {log_path} ***\n")
+            self.signals.set_status.emit(f"Timing log: {logger.log_file}")
             # Final GPU memory cleanup
             if self.wall is not None and self.wall._gpu is not None:
                 self.wall._gpu.cleanup_memory()
@@ -1211,12 +1387,14 @@ class GreedySolverGUI(QMainWindow):
         window = float(self.window_edit.text())
         metric = self.metric_combo.currentText()
 
-        self.current_series = self.get_current_series()
+        with TimingContext("greedy_get_current_series"):
+            self.current_series = self.get_current_series()
 
-        all_diss = self.wall.compute_batch_dissonance(
-            list(self.high_dissonance_positions),
-            self.current_series, kernel_size, metric, window
-        )
+        with TimingContext("greedy_batch_dissonance", f"n={len(self.high_dissonance_positions)}"):
+            all_diss = self.wall.compute_batch_dissonance(
+                list(self.high_dissonance_positions),
+                self.current_series, kernel_size, metric, window
+            )
 
         best_pos = max(self.high_dissonance_positions, key=lambda p: all_diss[p])
 
@@ -1235,42 +1413,44 @@ class GreedySolverGUI(QMainWindow):
 
         if use_gpu_batch:
             # Use fully vectorized GPU evaluation
-            results = self.wall._gpu.evaluate_swap_batch(
-                swap_candidates, self.current_series,
-                self.wall.get_neighbors, kernel_size, metric
-            )
+            with TimingContext("greedy_gpu_evaluate_swap_batch", f"n_candidates={len(swap_candidates)}"):
+                results = self.wall._gpu.evaluate_swap_batch(
+                    swap_candidates, self.current_series,
+                    self.wall.get_neighbors, kernel_size, metric
+                )
             if results and results[0][0] > 0:
                 return results[0][1]  # Return the best swap
             return None
         else:
             # CPU fallback
-            x1, y1 = best_pos
-            diss_best_before = all_diss[best_pos]
-            best_swap = None
-            best_improvement = 0
+            with TimingContext("greedy_cpu_swap_eval", f"n_candidates={len(swap_candidates)}"):
+                x1, y1 = best_pos
+                diss_best_before = all_diss[best_pos]
+                best_swap = None
+                best_improvement = 0
 
-            series_copy = self.current_series.copy()
+                series_copy = self.current_series.copy()
 
-            for _, other_pos in swap_candidates:
-                x2, y2 = other_pos
-                diss_other_before = all_diss[other_pos]
+                for _, other_pos in swap_candidates:
+                    x2, y2 = other_pos
+                    diss_other_before = all_diss[other_pos]
 
-                series_copy[y1, x1], series_copy[y2, x2] = \
-                    series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+                    series_copy[y1, x1], series_copy[y2, x2] = \
+                        series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
-                diss_best_after = self.wall.compute_position_dissonance(
-                    x1, y1, series_copy, kernel_size, metric, window)
-                diss_other_after = self.wall.compute_position_dissonance(
-                    x2, y2, series_copy, kernel_size, metric, window)
+                    diss_best_after = self.wall.compute_position_dissonance(
+                        x1, y1, series_copy, kernel_size, metric, window)
+                    diss_other_after = self.wall.compute_position_dissonance(
+                        x2, y2, series_copy, kernel_size, metric, window)
 
-                improvement = (diss_best_before + diss_other_before) - (diss_best_after + diss_other_after)
+                    improvement = (diss_best_before + diss_other_before) - (diss_best_after + diss_other_after)
 
-                if improvement > best_improvement:
-                    best_improvement = improvement
-                    best_swap = other_pos
+                    if improvement > best_improvement:
+                        best_improvement = improvement
+                        best_swap = other_pos
 
-                series_copy[y1, x1], series_copy[y2, x2] = \
-                    series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+                    series_copy[y1, x1], series_copy[y2, x2] = \
+                        series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
             if best_swap is not None and best_improvement > 0:
                 return (best_pos, best_swap)
@@ -1285,12 +1465,14 @@ class GreedySolverGUI(QMainWindow):
         window = float(self.window_edit.text())
         metric = self.metric_combo.currentText()
 
-        self.current_series = self.get_current_series()
+        with TimingContext("topk_get_current_series"):
+            self.current_series = self.get_current_series()
 
-        all_diss = self.wall.compute_batch_dissonance(
-            list(self.high_dissonance_positions),
-            self.current_series, kernel_size, metric, window
-        )
+        with TimingContext("topk_batch_dissonance", f"n={len(self.high_dissonance_positions)}"):
+            all_diss = self.wall.compute_batch_dissonance(
+                list(self.high_dissonance_positions),
+                self.current_series, kernel_size, metric, window
+            )
 
         diss_list = [(all_diss[pos], pos) for pos in self.high_dissonance_positions]
         diss_list.sort(reverse=True)
@@ -1318,48 +1500,51 @@ class GreedySolverGUI(QMainWindow):
 
             if use_gpu_batch:
                 # Use fully vectorized GPU evaluation
-                results = self.wall._gpu.evaluate_swap_batch(
-                    swap_candidates, self.current_series,
-                    self.wall.get_neighbors, kernel_size, metric
-                )
+                with TimingContext("topk_gpu_evaluate_swap_batch", f"topk={current_topk},n_candidates={len(swap_candidates)}"):
+                    results = self.wall._gpu.evaluate_swap_batch(
+                        swap_candidates, self.current_series,
+                        self.wall.get_neighbors, kernel_size, metric
+                    )
                 if results and results[0][0] > 0:
                     return results[0][1]  # Return the best swap
             else:
                 # CPU fallback with individual evaluation
-                diss_before = {pos: d for d, pos in top_k_with_diss}
-                best_swap = None
-                best_improvement = 0
+                with TimingContext("topk_cpu_swap_eval", f"topk={current_topk},n_candidates={len(swap_candidates)}"):
+                    diss_before = {pos: d for d, pos in top_k_with_diss}
+                    best_swap = None
+                    best_improvement = 0
 
-                series_copy = self.current_series.copy()
+                    series_copy = self.current_series.copy()
 
-                for pos1, pos2 in swap_candidates:
-                    x1, y1 = pos1
-                    x2, y2 = pos2
+                    for pos1, pos2 in swap_candidates:
+                        x1, y1 = pos1
+                        x2, y2 = pos2
 
-                    diss1_before = diss_before[pos1]
-                    diss2_before = diss_before[pos2]
+                        diss1_before = diss_before[pos1]
+                        diss2_before = diss_before[pos2]
 
-                    series_copy[y1, x1], series_copy[y2, x2] = \
-                        series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+                        series_copy[y1, x1], series_copy[y2, x2] = \
+                            series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
-                    diss1_after = self.wall.compute_position_dissonance(
-                        x1, y1, series_copy, kernel_size, metric, window)
-                    diss2_after = self.wall.compute_position_dissonance(
-                        x2, y2, series_copy, kernel_size, metric, window)
+                        diss1_after = self.wall.compute_position_dissonance(
+                            x1, y1, series_copy, kernel_size, metric, window)
+                        diss2_after = self.wall.compute_position_dissonance(
+                            x2, y2, series_copy, kernel_size, metric, window)
 
-                    improvement = (diss1_before + diss2_before) - (diss1_after + diss2_after)
+                        improvement = (diss1_before + diss2_before) - (diss1_after + diss2_after)
 
-                    if improvement > best_improvement:
-                        best_improvement = improvement
-                        best_swap = (pos1, pos2)
+                        if improvement > best_improvement:
+                            best_improvement = improvement
+                            best_swap = (pos1, pos2)
 
-                    series_copy[y1, x1], series_copy[y2, x2] = \
-                        series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
+                        series_copy[y1, x1], series_copy[y2, x2] = \
+                            series_copy[y2, x2].copy(), series_copy[y1, x1].copy()
 
                 if best_swap is not None and best_improvement > 0:
                     return best_swap
 
             # No improvement found, double top-k and try again
+            get_perf_logger().log_timing("topk_expand", 0, f"no_improvement_at_topk={current_topk}")
             current_topk *= 2
 
         return None
@@ -1374,12 +1559,14 @@ class GreedySolverGUI(QMainWindow):
         window = float(self.window_edit.text())
         metric = self.metric_combo.currentText()
 
-        self.current_series = self.get_current_series()
+        with TimingContext("sa_get_current_series"):
+            self.current_series = self.get_current_series()
 
-        all_diss = self.wall.compute_batch_dissonance(
-            list(self.high_dissonance_positions),
-            self.current_series, kernel_size, metric, window
-        )
+        with TimingContext("sa_batch_dissonance", f"n={len(self.high_dissonance_positions)}"):
+            all_diss = self.wall.compute_batch_dissonance(
+                list(self.high_dissonance_positions),
+                self.current_series, kernel_size, metric, window
+            )
 
         diss_list = [(all_diss[pos], pos) for pos in self.high_dissonance_positions]
         diss_list.sort(reverse=True)
@@ -1429,13 +1616,25 @@ class GreedySolverGUI(QMainWindow):
         window = float(self.window_edit.text())
         metric = self.metric_combo.currentText()
 
+        t0 = time.perf_counter()
         if self.current_series is None:
             self.current_series = self.get_current_series()
+        series_time = (time.perf_counter() - t0) * 1000
 
+        t0 = time.perf_counter()
         all_diss = self.wall.compute_batch_dissonance(
             list(self.high_dissonance_positions),
             self.current_series, kernel_size, metric, window
         )
+        batch_time = (time.perf_counter() - t0) * 1000
+
+        # Log details
+        if self.solver_running:
+            get_perf_logger().log_timing(
+                "high_diss_total_detail",
+                series_time + batch_time,
+                f"series={series_time:.1f}ms,batch={batch_time:.1f}ms,n={len(self.high_dissonance_positions)}"
+            )
 
         return sum(all_diss.values())
 
@@ -1524,10 +1723,15 @@ class GreedySolverGUI(QMainWindow):
         if self.wall is None:
             return
 
+        display_start = time.perf_counter()
+
         mode = self.view_mode
 
+        t0 = time.perf_counter()
         video_img = self.wall.get_frame_image(self.current_frame)
+        get_frame_time = (time.perf_counter() - t0) * 1000
 
+        t0 = time.perf_counter()
         if mode == "video":
             img = video_img
         elif mode == "heatmap":
@@ -1538,16 +1742,20 @@ class GreedySolverGUI(QMainWindow):
             img = self.get_overlay_image(video_img, self.get_correctness_image())
         else:
             img = video_img
+        mode_time = (time.perf_counter() - t0) * 1000
 
         if img is None:
             return
 
         # Scale image
+        t0 = time.perf_counter()
         new_width = int(self.wall.width * self.display_scale)
         new_height = int(self.wall.height * self.display_scale)
         img = img.resize((new_width, new_height), Image.Resampling.NEAREST)
+        resize_time = (time.perf_counter() - t0) * 1000
 
         # Convert PIL to QPixmap
+        t0 = time.perf_counter()
         if img.mode == 'RGB':
             data = img.tobytes("raw", "RGB")
             qimg = QImage(data, img.width, img.height, img.width * 3, QImage.Format_RGB888)
@@ -1557,12 +1765,24 @@ class GreedySolverGUI(QMainWindow):
             qimg = QImage(data, img.width, img.height, img.width * 3, QImage.Format_RGB888)
 
         pixmap = QPixmap.fromImage(qimg)
+        convert_time = (time.perf_counter() - t0) * 1000
 
         # Draw swap line if needed
+        t0 = time.perf_counter()
         if self.last_swap is not None:
             pixmap = self._draw_swap_line(pixmap)
+        draw_time = (time.perf_counter() - t0) * 1000
 
         self.canvas.setPixmap(pixmap)
+
+        total_display_time = (time.perf_counter() - display_start) * 1000
+        # Only log if solver is running to avoid noise
+        if self.solver_running:
+            get_perf_logger().log_timing(
+                "update_display",
+                total_display_time,
+                f"frame={get_frame_time:.1f}ms,mode={mode_time:.1f}ms,resize={resize_time:.1f}ms,convert={convert_time:.1f}ms,draw={draw_time:.1f}ms"
+            )
 
     def _draw_swap_line(self, pixmap):
         if self.last_swap is None or self.wall is None:
