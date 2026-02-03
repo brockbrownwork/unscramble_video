@@ -44,6 +44,7 @@ class WorkerSignals(QObject):
     finished = pyqtSignal()
     error = pyqtSignal(str)
     update_display = pyqtSignal()
+    update_display_sync = pyqtSignal()  # For synchronized display updates
     update_metrics = pyqtSignal()
     update_scramble_info = pyqtSignal()
     set_status = pyqtSignal(str)
@@ -306,9 +307,13 @@ class GreedySolverGUI(QMainWindow):
         self.signals.finished.connect(self._on_identify_complete)
         self.signals.error.connect(self._on_error)
         self.signals.update_display.connect(self.update_display)
+        self.signals.update_display_sync.connect(self._on_update_display_sync)
         self.signals.update_metrics.connect(self.update_metrics)
         self.signals.update_scramble_info.connect(self.update_scramble_info)
         self.signals.set_status.connect(self._set_status)
+
+        # Event for synchronized display updates (solver thread waits for GUI)
+        self.display_done_event = threading.Event()
 
         self.setup_ui()
 
@@ -673,6 +678,11 @@ class GreedySolverGUI(QMainWindow):
     def _on_error(self, message):
         QMessageBox.critical(self, "Error", message)
         self.status_label.setText("Error")
+
+    def _on_update_display_sync(self):
+        """Handle synchronized display update - updates display then signals completion."""
+        self.update_display()
+        self.display_done_event.set()
 
     def _set_status(self, text):
         self.status_label.setText(text)
@@ -1109,9 +1119,12 @@ class GreedySolverGUI(QMainWindow):
                     self.pending_swap = best_swap
                     self.last_swap = best_swap
                     self.show_pre_swap = True
-                    self.signals.update_display.emit()
 
-                    time.sleep(0.5)
+                    # Use synchronized display update - wait for GUI thread to finish
+                    self.display_done_event.clear()
+                    self.signals.update_display_sync.emit()
+                    # Wait for display to complete (with timeout to avoid deadlock)
+                    self.display_done_event.wait(timeout=2.0)
 
                     if not self.solver_running:
                         break
@@ -1141,9 +1154,9 @@ class GreedySolverGUI(QMainWindow):
                     self.signals.set_status.emit("Converged (no improvement)")
                     break
 
-                remaining_delay = max(0, delay_ms / 1000.0 - 0.5)
-                if remaining_delay > 0:
-                    time.sleep(remaining_delay)
+                # Apply user-configured delay between iterations
+                if delay_ms > 0:
+                    time.sleep(delay_ms / 1000.0)
 
             self.signals.set_status.emit(f"Solver stopped at iteration {self.iteration}")
 
