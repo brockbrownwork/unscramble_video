@@ -51,8 +51,13 @@ def ease_in_out_cubic(t):
         return 1 - pow(-2 * t + 2, 3) / 2
 
 
+def draw_circle(frame, center_x, center_y, radius, color, thickness=2):
+    """Draw a circle on the frame using cv2."""
+    cv2.circle(frame, (int(center_x), int(center_y)), int(radius), color, thickness)
+
+
 def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffle_animation.gif",
-                          pixel_scale=8, swap_duration_frames=15, fps=15):
+                          pixel_scale=8, swap_duration_frames=15, fps=30, highlight_frames=20):
     """
     Create an animation showing pixels being swapped as the video plays.
 
@@ -64,6 +69,7 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
         pixel_scale: how much to scale up each pixel for visibility
         swap_duration_frames: how many output frames the swap animation takes
         fps: output frame rate
+        highlight_frames: how many frames to show red circles before swap starts
     """
     num_frames, orig_h, orig_w, _ = frames.shape
 
@@ -78,14 +84,14 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
         for x in range(orig_w):
             perm[y, x] = [y, x]
 
-    # Track active swaps: list of (start_frame, (pos1, pos2), progress)
+    # Track active swaps with phases: 'highlight' -> 'swapping' -> 'completed'
     active_swaps = []
     swap_idx = 0
 
     output_frames = []
 
-    # Calculate total output frames needed
-    total_output_frames = num_frames + (swap_duration_frames if swap_pairs else 0)
+    # Calculate total output frames needed (include highlight phase)
+    total_output_frames = num_frames + (highlight_frames + swap_duration_frames if swap_pairs else 0)
 
     print(f"Creating animation: {orig_w}x{orig_h} pixels, scaled to {scaled_w}x{scaled_h}")
     print(f"Video frames: {num_frames}, Output frames: {total_output_frames}")
@@ -96,14 +102,14 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
         video_frame_idx = min(out_frame_idx, num_frames - 1)
         video_frame = frames[video_frame_idx]
 
-        # Check if we should start a new swap
+        # Check if we should start a new swap (begins with highlight phase)
         while swap_idx < len(swap_schedule) and swap_schedule[swap_idx] <= out_frame_idx:
             pos1, pos2 = swap_pairs[swap_idx]
             active_swaps.append({
                 'start_frame': out_frame_idx,
                 'pos1': pos1,
                 'pos2': pos2,
-                'completed': False
+                'phase': 'highlight',  # 'highlight' -> 'swapping' -> 'completed'
             })
             swap_idx += 1
 
@@ -111,9 +117,10 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
         output_frame = np.zeros((scaled_h, scaled_w, 3), dtype=np.uint8)
 
         # Set of positions currently being animated (don't draw them in the grid)
+        # Only exclude during 'swapping' phase, not during 'highlight'
         animating_positions = set()
         for swap in active_swaps:
-            if not swap['completed']:
+            if swap['phase'] == 'swapping':
                 animating_positions.add(swap['pos1'])
                 animating_positions.add(swap['pos2'])
 
@@ -141,77 +148,133 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
         for x in range(0, scaled_w, pixel_scale):
             output_frame[:, x] = grid_color
 
-        # Animate active swaps
+        # Process active swaps through phases: highlight -> swapping -> completed
         for swap in active_swaps:
-            if swap['completed']:
+            if swap['phase'] == 'completed':
                 continue
 
-            progress = (out_frame_idx - swap['start_frame']) / swap_duration_frames
-
-            if progress >= 1.0:
-                # Swap complete - update permutation
-                x1, y1 = swap['pos1']
-                x2, y2 = swap['pos2']
-                perm[y1, x1], perm[y2, x2] = perm[y2, x2].copy(), perm[y1, x1].copy()
-                swap['completed'] = True
-
-                # Draw final positions
-                for (x, y) in [swap['pos1'], swap['pos2']]:
-                    orig_y, orig_x = perm[y, x]
-                    color = video_frame[orig_y, orig_x]
-                    y_start = y * pixel_scale
-                    y_end = (y + 1) * pixel_scale
-                    x_start = x * pixel_scale
-                    x_end = (x + 1) * pixel_scale
-                    output_frame[y_start:y_end, x_start:x_end] = color
-                continue
-
-            # Ease the animation
-            t = ease_in_out_cubic(progress)
-
+            frames_elapsed = out_frame_idx - swap['start_frame']
             x1, y1 = swap['pos1']
             x2, y2 = swap['pos2']
 
-            # Get colors of the two pixels being swapped
-            orig_y1, orig_x1 = perm[y1, x1]
-            orig_y2, orig_x2 = perm[y2, x2]
-            color1 = video_frame[orig_y1, orig_x1]
-            color2 = video_frame[orig_y2, orig_x2]
+            # Calculate centers for circle drawing
+            center1_x = x1 * pixel_scale + pixel_scale // 2
+            center1_y = y1 * pixel_scale + pixel_scale // 2
+            center2_x = x2 * pixel_scale + pixel_scale // 2
+            center2_y = y2 * pixel_scale + pixel_scale // 2
 
-            # Interpolate positions (in scaled coordinates)
-            center1 = np.array([x1 * pixel_scale + pixel_scale // 2,
-                               y1 * pixel_scale + pixel_scale // 2])
-            center2 = np.array([x2 * pixel_scale + pixel_scale // 2,
-                               y2 * pixel_scale + pixel_scale // 2])
+            if swap['phase'] == 'highlight':
+                if frames_elapsed >= highlight_frames:
+                    # Transition to swapping phase
+                    swap['phase'] = 'swapping'
+                    swap['swap_start_frame'] = out_frame_idx
+                else:
+                    # Pulsing effect - intensity varies over highlight duration
+                    pulse_progress = frames_elapsed / highlight_frames
+                    pulse = 0.5 + 0.5 * np.sin(pulse_progress * np.pi * 3)  # 1.5 pulses
 
-            # Pixel 1 moves toward position 2, pixel 2 moves toward position 1
-            current_center1 = center1 + t * (center2 - center1)
-            current_center2 = center2 + t * (center1 - center2)
+                    for cx, cy in [(center1_x, center1_y), (center2_x, center2_y)]:
+                        # Draw red glow around the pixel (larger area)
+                        glow_radius = int(pixel_scale * 0.8 + 4)
+                        glow_intensity = int(80 * pulse)
+                        for gy in range(max(0, cy - glow_radius), min(scaled_h, cy + glow_radius)):
+                            for gx in range(max(0, cx - glow_radius), min(scaled_w, cx + glow_radius)):
+                                dist = np.sqrt((gx - cx)**2 + (gy - cy)**2)
+                                if dist < glow_radius:
+                                    # Red glow that fades with distance
+                                    fade = 1 - (dist / glow_radius)
+                                    add_red = int(glow_intensity * fade)
+                                    output_frame[gy, gx] = np.clip(
+                                        output_frame[gy, gx].astype(np.int32) + np.array([add_red, 0, 0]),
+                                        0, 255
+                                    ).astype(np.uint8)
 
-            # Add a slight arc to the motion (lift up in the middle)
-            arc_height = pixel_scale * 2 * np.sin(progress * np.pi)
-            current_center1[1] -= arc_height
-            current_center2[1] -= arc_height
+                        # Draw thick red border rectangle around the pixel
+                        border_thickness = max(2, pixel_scale // 3)
+                        half = pixel_scale // 2
+                        border_color = (255, int(50 * pulse), int(50 * pulse))  # Pulsing red-orange
 
-            # Draw the moving pixels (with a highlight/glow effect)
-            for center, color in [(current_center1, color1), (current_center2, color2)]:
-                cx, cy = int(center[0]), int(center[1])
-                half = pixel_scale // 2
+                        # Top and bottom borders
+                        for t in range(border_thickness):
+                            y_top = max(0, cy - half - t)
+                            y_bot = min(scaled_h - 1, cy + half + t)
+                            for bx in range(max(0, cx - half - border_thickness),
+                                          min(scaled_w, cx + half + border_thickness + 1)):
+                                output_frame[y_top, bx] = border_color
+                                output_frame[y_bot, bx] = border_color
 
-                # Draw glow/shadow
-                glow_size = half + 2
-                for gy in range(max(0, cy - glow_size), min(scaled_h, cy + glow_size)):
-                    for gx in range(max(0, cx - glow_size), min(scaled_w, cx + glow_size)):
-                        # Yellow glow
-                        output_frame[gy, gx] = np.clip(
-                            output_frame[gy, gx].astype(np.int32) + np.array([30, 30, 0]),
-                            0, 255
-                        ).astype(np.uint8)
+                        # Left and right borders
+                        for t in range(border_thickness):
+                            x_left = max(0, cx - half - t)
+                            x_right = min(scaled_w - 1, cx + half + t)
+                            for by in range(max(0, cy - half - border_thickness),
+                                          min(scaled_h, cy + half + border_thickness + 1)):
+                                output_frame[by, x_left] = border_color
+                                output_frame[by, x_right] = border_color
 
-                # Draw the pixel itself
-                for py in range(max(0, cy - half), min(scaled_h, cy + half)):
-                    for px in range(max(0, cx - half), min(scaled_w, cx + half)):
-                        output_frame[py, px] = color
+                    continue
+
+            if swap['phase'] == 'swapping':
+                swap_elapsed = out_frame_idx - swap['swap_start_frame']
+                progress = swap_elapsed / swap_duration_frames
+
+                if progress >= 1.0:
+                    # Swap complete - update permutation
+                    perm[y1, x1], perm[y2, x2] = perm[y2, x2].copy(), perm[y1, x1].copy()
+                    swap['phase'] = 'completed'
+
+                    # Draw final positions
+                    for (x, y) in [swap['pos1'], swap['pos2']]:
+                        orig_y, orig_x = perm[y, x]
+                        color = video_frame[orig_y, orig_x]
+                        y_start = y * pixel_scale
+                        y_end = (y + 1) * pixel_scale
+                        x_start = x * pixel_scale
+                        x_end = (x + 1) * pixel_scale
+                        output_frame[y_start:y_end, x_start:x_end] = color
+                    continue
+
+                # Ease the animation
+                t = ease_in_out_cubic(progress)
+
+                # Get colors of the two pixels being swapped
+                orig_y1, orig_x1 = perm[y1, x1]
+                orig_y2, orig_x2 = perm[y2, x2]
+                color1 = video_frame[orig_y1, orig_x1]
+                color2 = video_frame[orig_y2, orig_x2]
+
+                # Interpolate positions (in scaled coordinates)
+                center1 = np.array([center1_x, center1_y], dtype=float)
+                center2 = np.array([center2_x, center2_y], dtype=float)
+
+                # Pixel 1 moves toward position 2, pixel 2 moves toward position 1
+                current_center1 = center1 + t * (center2 - center1)
+                current_center2 = center2 + t * (center1 - center2)
+
+                # Add a slight arc to the motion (lift up in the middle)
+                arc_height = pixel_scale * 2 * np.sin(progress * np.pi)
+                current_center1[1] -= arc_height
+                current_center2[1] -= arc_height
+
+                # Draw the moving pixels (with a highlight/glow effect)
+                for center, color in [(current_center1, color1), (current_center2, color2)]:
+                    cx, cy = int(center[0]), int(center[1])
+                    half = pixel_scale // 2
+
+                    # Draw glow/shadow
+                    glow_size = half + 2
+                    for gy in range(max(0, cy - glow_size), min(scaled_h, cy + glow_size)):
+                        for gx in range(max(0, cx - glow_size), min(scaled_w, cx + glow_size)):
+                            # Yellow glow
+                            output_frame[gy, gx] = np.clip(
+                                output_frame[gy, gx].astype(np.int32) + np.array([30, 30, 0]),
+                                0, 255
+                            ).astype(np.uint8)
+
+                    # Draw the pixel itself
+                    for py in range(max(0, cy - half), min(scaled_h, cy + half)):
+                        for px in range(max(0, cx - half), min(scaled_w, cx + half)):
+                            output_frame[py, px] = color
 
         output_frames.append(Image.fromarray(output_frame))
 
@@ -232,9 +295,12 @@ def generate_swap_schedule(num_video_frames, num_swaps, grid_width, grid_height,
     """
     Generate random swap pairs and when they should occur.
 
+    Note: stagger_frames is the delay between swap starts. Each swap has a
+    highlight phase followed by a swap animation phase.
+
     Returns:
         swap_pairs: list of ((x1, y1), (x2, y2))
-        swap_schedule: list of frame indices when each swap starts
+        swap_schedule: list of frame indices when each swap starts (highlight begins)
     """
     np.random.seed(seed)
 
@@ -267,7 +333,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Create animated pixel shuffle visualization")
-    parser.add_argument("-v", "--video", type=str, help="Input video path")
+    parser.add_argument("-v", "--video", type=str, help="Input video path", default="cab_ride_trimmed.mkv")
     parser.add_argument("-o", "--output", type=str, default="shuffle_animation.gif",
                        help="Output GIF path")
     parser.add_argument("-n", "--num-swaps", type=int, default=10,
@@ -280,8 +346,10 @@ def main():
                        help="How much to scale up each pixel in output")
     parser.add_argument("--fps", type=int, default=20,
                        help="Output GIF frame rate")
-    parser.add_argument("--swap-duration", type=int, default=12,
+    parser.add_argument("--swap-duration", type=int, default=48,
                        help="Frames per swap animation")
+    parser.add_argument("--highlight-frames", type=int, default=12,
+                       help="Frames to show red circles before swap")
     parser.add_argument("--stagger", type=int, default=15,
                        help="Frames between swap starts")
     parser.add_argument("--seed", type=int, default=42,
@@ -323,7 +391,8 @@ def main():
         output_path=args.output,
         pixel_scale=args.pixel_scale,
         swap_duration_frames=args.swap_duration,
-        fps=args.fps
+        fps=args.fps,
+        highlight_frames=args.highlight_frames
     )
 
 
