@@ -90,8 +90,14 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
 
     output_frames = []
 
-    # Calculate total output frames needed (include highlight phase)
-    total_output_frames = num_frames + (highlight_frames + swap_duration_frames if swap_pairs else 0)
+    # Calculate total output frames needed
+    # The animation should end when the last swap completes
+    if swap_pairs and swap_schedule:
+        last_swap_start = swap_schedule[-1]
+        last_swap_end = last_swap_start + highlight_frames + swap_duration_frames
+        total_output_frames = max(num_frames, last_swap_end)
+    else:
+        total_output_frames = num_frames
 
     print(f"Creating animation: {orig_w}x{orig_h} pixels, scaled to {scaled_w}x{scaled_h}")
     print(f"Video frames: {num_frames}, Output frames: {total_output_frames}")
@@ -175,7 +181,7 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
 
                     for cx, cy in [(center1_x, center1_y), (center2_x, center2_y)]:
                         # Draw red glow around the pixel (larger area)
-                        glow_radius = int(pixel_scale * 0.8 + 4)
+                        glow_radius = int(pixel_scale * 2 + 4)
                         glow_intensity = int(80 * pulse)
                         for gy in range(max(0, cy - glow_radius), min(scaled_h, cy + glow_radius)):
                             for gx in range(max(0, cx - glow_radius), min(scaled_w, cx + glow_radius)):
