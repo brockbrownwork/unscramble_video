@@ -297,12 +297,16 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
 
 
 def generate_swap_schedule(num_video_frames, num_swaps, grid_width, grid_height,
-                           stagger_frames=20, seed=42):
+                           stagger_frames=20, seed=42, highlight_frames=0, swap_duration_frames=0,
+                           sequential=True):
     """
     Generate random swap pairs and when they should occur.
 
-    Note: stagger_frames is the delay between swap starts. Each swap has a
-    highlight phase followed by a swap animation phase.
+    Args:
+        stagger_frames: delay between swap starts (used when sequential=False)
+        highlight_frames: frames for highlight phase (used when sequential=True)
+        swap_duration_frames: frames for swap animation (used when sequential=True)
+        sequential: if True, each swap waits for the previous to complete
 
     Returns:
         swap_pairs: list of ((x1, y1), (x2, y2))
@@ -329,8 +333,14 @@ def generate_swap_schedule(num_video_frames, num_swaps, grid_width, grid_height,
                 break
             attempts += 1
 
-    # Schedule swaps to be staggered throughout the video
-    swap_schedule = [i * stagger_frames for i in range(len(swap_pairs))]
+    # Schedule swaps
+    if sequential and highlight_frames > 0 and swap_duration_frames > 0:
+        # Each swap waits for the previous one to complete
+        total_swap_time = highlight_frames + swap_duration_frames
+        swap_schedule = [i * total_swap_time for i in range(len(swap_pairs))]
+    else:
+        # Original behavior: stagger by fixed amount (may overlap)
+        swap_schedule = [i * stagger_frames for i in range(len(swap_pairs))]
 
     return swap_pairs, swap_schedule
 
@@ -344,7 +354,7 @@ def main():
                        help="Output GIF path")
     parser.add_argument("-n", "--num-swaps", type=int, default=10,
                        help="Number of pixel swaps to animate")
-    parser.add_argument("-f", "--frames", type=int, default=120,
+    parser.add_argument("-f", "--frames", type=int, default=600,
                        help="Number of video frames to use")
     parser.add_argument("-s", "--scale", type=float, default=0.1,
                        help="Scale factor for input video (to reduce pixel count)")
@@ -357,8 +367,10 @@ def main():
     parser.add_argument("--highlight-frames", type=int, default=12,
                        help="Frames to show red circles before swap")
     parser.add_argument("--stagger", type=int, default=15,
-                       help="Frames between swap starts")
-    parser.add_argument("--seed", type=int, default=42,
+                       help="Frames between swap starts (only used with --overlap)")
+    parser.add_argument("--overlap", action="store_true",
+                       help="Allow swaps to overlap (default: sequential, one at a time)")
+    parser.add_argument("--seed", type=int, default=420,
                        help="Random seed for swap generation")
 
     args = parser.parse_args()
@@ -386,7 +398,10 @@ def main():
     h, w = frames.shape[1:3]
     swap_pairs, swap_schedule = generate_swap_schedule(
         len(frames), args.num_swaps, w, h,
-        stagger_frames=args.stagger, seed=args.seed
+        stagger_frames=args.stagger, seed=args.seed,
+        highlight_frames=args.highlight_frames,
+        swap_duration_frames=args.swap_duration,
+        sequential=not args.overlap
     )
 
     print(f"Generated {len(swap_pairs)} swaps")

@@ -1,0 +1,1296 @@
+# Solver Performance Timing Log
+# Started: 2026-02-03T03:48:23.830884
+#======================================================================
+
+# Strategy: top_k_best
+# Max iterations: 1000
+# High-diss positions: 2000
+# Top-K: 100
+# Metric: euclidean
+# GPU enabled: True
+
+[iter=0000] high_diss_total_detail: 36.72ms | series=0.0ms,batch=36.7ms,n=2000
+[iter=0000] compute_initial_dissonance: 37.02ms
+[iter=0000] topk_get_current_series: 2.09ms
+[iter=0000] topk_batch_dissonance: 48.47ms | n=2000
+[iter=0000] topk_gpu_evaluate_swap_batch: 61.92ms | topk=100,n_candidates=4950
+[iter=0000] find_best_swap: 116.58ms | strategy=top_k_best
+[iter=0000] update_display: 13.06ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=3.1ms,draw=0.2ms
+[iter=0000] display_sync_wait: 13.93ms
+[iter=0000] execute_swap: 3.11ms
+[iter=0000] high_diss_total_detail: 56.64ms | series=0.0ms,batch=56.6ms,n=2000
+[iter=0000] compute_high_diss_total: 56.88ms
+[iter=0000] count_correct_positions: 161.99ms
+[iter=0000] emit_signals: 0.01ms
+[iter=0000] TOTAL_ITERATION: 353.27ms
+
+[iter=0001] topk_get_current_series: 111.02ms
+[iter=0001] topk_batch_dissonance: 213.15ms | n=2000
+[iter=0001] topk_gpu_evaluate_swap_batch: 76.22ms | topk=100,n_candidates=4950
+[iter=0001] find_best_swap: 425.43ms | strategy=top_k_best
+[iter=0001] update_graphs: 422.43ms
+[iter=0001] update_display: 12.42ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0001] update_display: 12.46ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0001] display_sync_wait: 478.18ms
+[iter=0001] execute_swap: 3.32ms
+[iter=0001] high_diss_total_detail: 51.58ms | series=0.0ms,batch=51.6ms,n=2000
+[iter=0001] compute_high_diss_total: 51.97ms
+[iter=0001] count_correct_positions: 168.75ms
+[iter=0001] emit_signals: 0.01ms
+[iter=0001] TOTAL_ITERATION: 1128.71ms
+
+[iter=0002] topk_get_current_series: 63.21ms
+[iter=0002] topk_batch_dissonance: 231.47ms | n=2000
+[iter=0002] topk_gpu_evaluate_swap_batch: 102.96ms | topk=100,n_candidates=4950
+[iter=0002] find_best_swap: 431.72ms | strategy=top_k_best
+[iter=0002] update_graphs: 317.79ms
+[iter=0002] update_display: 12.72ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.7ms,draw=0.2ms
+[iter=0002] update_display: 12.94ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=3.0ms,draw=0.2ms
+[iter=0002] display_sync_wait: 353.26ms
+[iter=0002] execute_swap: 3.36ms
+[iter=0002] high_diss_total_detail: 51.74ms | series=0.0ms,batch=51.7ms,n=2000
+[iter=0002] compute_high_diss_total: 52.06ms
+[iter=0002] count_correct_positions: 170.60ms
+[iter=0002] emit_signals: 0.02ms
+[iter=0002] TOTAL_ITERATION: 1012.18ms
+
+[iter=0003] topk_get_current_series: 96.66ms
+[iter=0003] topk_batch_dissonance: 235.31ms | n=2000
+[iter=0003] topk_gpu_evaluate_swap_batch: 112.17ms | topk=100,n_candidates=4950
+[iter=0003] find_best_swap: 466.43ms | strategy=top_k_best
+[iter=0003] update_graphs: 271.13ms
+[iter=0003] update_display: 12.64ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.7ms,draw=0.2ms
+[iter=0003] update_display: 12.51ms | frame=7.8ms,mode=0.0ms,resize=1.6ms,convert=2.6ms,draw=0.2ms
+[iter=0003] display_sync_wait: 295.25ms
+[iter=0003] execute_swap: 3.95ms
+[iter=0003] high_diss_total_detail: 80.10ms | series=0.0ms,batch=80.1ms,n=2000
+[iter=0003] compute_high_diss_total: 80.35ms
+[iter=0003] count_correct_positions: 166.65ms
+[iter=0003] emit_signals: 0.01ms
+[iter=0003] TOTAL_ITERATION: 1017.01ms
+
+[iter=0004] topk_get_current_series: 80.01ms
+[iter=0004] topk_batch_dissonance: 249.94ms | n=2000
+[iter=0004] topk_gpu_evaluate_swap_batch: 110.13ms | topk=100,n_candidates=4950
+[iter=0004] find_best_swap: 461.05ms | strategy=top_k_best
+[iter=0004] update_graphs: 290.12ms
+[iter=0004] update_display: 12.73ms | frame=7.9ms,mode=0.0ms,resize=1.7ms,convert=2.6ms,draw=0.2ms
+[iter=0004] update_display: 12.98ms | frame=7.8ms,mode=0.0ms,resize=1.8ms,convert=2.8ms,draw=0.2ms
+[iter=0004] display_sync_wait: 295.32ms
+[iter=0004] execute_swap: 3.34ms
+[iter=0004] high_diss_total_detail: 51.44ms | series=0.0ms,batch=51.4ms,n=2000
+[iter=0004] compute_high_diss_total: 51.78ms
+[iter=0004] count_correct_positions: 173.95ms
+[iter=0004] emit_signals: 0.01ms
+[iter=0004] TOTAL_ITERATION: 986.67ms
+
+[iter=0005] topk_get_current_series: 111.06ms
+[iter=0005] topk_batch_dissonance: 194.27ms | n=2000
+[iter=0005] topk_gpu_evaluate_swap_batch: 112.65ms | topk=100,n_candidates=4950
+[iter=0005] find_best_swap: 437.72ms | strategy=top_k_best
+[iter=0005] update_graphs: 265.29ms
+[iter=0005] update_display: 12.62ms | frame=7.6ms,mode=0.0ms,resize=1.7ms,convert=2.8ms,draw=0.2ms
+[iter=0005] update_display: 12.51ms | frame=7.9ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0005] display_sync_wait: 284.19ms
+[iter=0005] execute_swap: 3.76ms
+[iter=0005] high_diss_total_detail: 51.51ms | series=0.0ms,batch=51.5ms,n=2000
+[iter=0005] compute_high_diss_total: 51.75ms
+[iter=0005] count_correct_positions: 174.15ms
+[iter=0005] emit_signals: 0.01ms
+[iter=0005] TOTAL_ITERATION: 952.39ms
+
+[iter=0006] topk_get_current_series: 110.00ms
+[iter=0006] topk_batch_dissonance: 188.93ms | n=2000
+[iter=0006] topk_gpu_evaluate_swap_batch: 133.38ms | topk=100,n_candidates=4950
+[iter=0006] find_best_swap: 459.50ms | strategy=top_k_best
+[iter=0006] update_graphs: 263.77ms
+[iter=0006] update_display: 12.78ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.8ms,draw=0.2ms
+[iter=0006] update_display: 12.45ms | frame=7.8ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0006] display_sync_wait: 263.30ms
+[iter=0006] execute_swap: 3.45ms
+[iter=0006] high_diss_total_detail: 51.16ms | series=0.0ms,batch=51.2ms,n=2000
+[iter=0006] compute_high_diss_total: 51.40ms
+[iter=0006] count_correct_positions: 166.97ms
+[iter=0006] emit_signals: 0.01ms
+[iter=0006] TOTAL_ITERATION: 946.11ms
+
+[iter=0007] topk_get_current_series: 110.96ms
+[iter=0007] topk_batch_dissonance: 218.86ms | n=2000
+[iter=0007] topk_gpu_evaluate_swap_batch: 114.75ms | topk=100,n_candidates=4950
+[iter=0007] find_best_swap: 518.19ms | strategy=top_k_best
+[iter=0007] update_graphs: 325.94ms
+[iter=0007] update_display: 12.77ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.8ms,draw=0.2ms
+[iter=0007] update_display: 12.58ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0007] display_sync_wait: 281.34ms
+[iter=0007] execute_swap: 3.54ms
+[iter=0007] high_diss_total_detail: 51.23ms | series=0.0ms,batch=51.2ms,n=2000
+[iter=0007] compute_high_diss_total: 51.47ms
+[iter=0007] count_correct_positions: 170.01ms
+[iter=0007] emit_signals: 0.01ms
+[iter=0007] TOTAL_ITERATION: 1025.66ms
+
+[iter=0008] topk_get_current_series: 79.09ms
+[iter=0008] topk_batch_dissonance: 301.76ms | n=2000
+[iter=0008] update_graphs: 301.34ms
+[iter=0008] topk_gpu_evaluate_swap_batch: 170.12ms | topk=100,n_candidates=4950
+[iter=0008] find_best_swap: 576.90ms | strategy=top_k_best
+[iter=0008] update_display: 13.67ms | frame=8.6ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0008] update_display: 13.48ms | frame=8.2ms,mode=0.0ms,resize=1.6ms,convert=3.1ms,draw=0.2ms
+[iter=0008] display_sync_wait: 188.53ms
+[iter=0008] execute_swap: 3.05ms
+[iter=0008] high_diss_total_detail: 54.70ms | series=0.0ms,batch=54.7ms,n=2000
+[iter=0008] compute_high_diss_total: 54.95ms
+[iter=0008] count_correct_positions: 167.23ms
+[iter=0008] emit_signals: 0.01ms
+[iter=0008] TOTAL_ITERATION: 991.72ms
+
+[iter=0009] topk_get_current_series: 62.92ms
+[iter=0009] topk_batch_dissonance: 243.43ms | n=2000
+[iter=0009] topk_gpu_evaluate_swap_batch: 137.59ms | topk=100,n_candidates=4950
+[iter=0009] find_best_swap: 470.51ms | strategy=top_k_best
+[iter=0009] update_graphs: 275.28ms
+[iter=0009] update_display: 12.88ms | frame=8.1ms,mode=0.0ms,resize=1.6ms,convert=2.7ms,draw=0.2ms
+[iter=0009] update_display: 12.96ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=3.0ms,draw=0.2ms
+[iter=0009] display_sync_wait: 255.61ms
+[iter=0009] execute_swap: 3.04ms
+[iter=0009] high_diss_total_detail: 49.22ms | series=0.0ms,batch=49.2ms,n=2000
+[iter=0009] compute_high_diss_total: 49.47ms
+[iter=0009] count_correct_positions: 169.23ms
+[iter=0009] emit_signals: 0.01ms
+[iter=0009] TOTAL_ITERATION: 963.92ms
+
+[iter=0010] topk_get_current_series: 112.04ms
+[iter=0010] topk_batch_dissonance: 191.10ms | n=2000
+[iter=0010] topk_gpu_evaluate_swap_batch: 107.66ms | topk=100,n_candidates=4950
+[iter=0010] find_best_swap: 437.36ms | strategy=top_k_best
+[iter=0010] update_graphs: 261.61ms
+[iter=0010] update_display: 13.00ms | frame=8.3ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0010] update_display: 12.72ms | frame=7.9ms,mode=0.0ms,resize=1.6ms,convert=2.6ms,draw=0.2ms
+[iter=0010] display_sync_wait: 278.73ms
+[iter=0010] execute_swap: 3.43ms
+[iter=0010] high_diss_total_detail: 56.40ms | series=0.0ms,batch=56.4ms,n=2000
+[iter=0010] compute_high_diss_total: 56.72ms
+[iter=0010] count_correct_positions: 173.44ms
+[iter=0010] emit_signals: 0.03ms
+[iter=0010] TOTAL_ITERATION: 952.02ms
+
+[iter=0011] topk_get_current_series: 109.87ms
+[iter=0011] topk_batch_dissonance: 206.30ms | n=2000
+[iter=0011] topk_gpu_evaluate_swap_batch: 147.02ms | topk=100,n_candidates=4950
+[iter=0011] find_best_swap: 495.47ms | strategy=top_k_best
+[iter=0011] update_graphs: 269.38ms
+[iter=0011] update_display: 12.55ms | frame=7.9ms,mode=0.0ms,resize=1.7ms,convert=2.4ms,draw=0.2ms
+[iter=0011] update_display: 13.74ms | frame=7.9ms,mode=0.0ms,resize=2.2ms,convert=3.1ms,draw=0.2ms
+[iter=0011] display_sync_wait: 249.59ms
+[iter=0011] execute_swap: 3.42ms
+[iter=0011] high_diss_total_detail: 51.14ms | series=0.0ms,batch=51.1ms,n=2000
+[iter=0011] compute_high_diss_total: 51.39ms
+[iter=0011] count_correct_positions: 185.12ms
+[iter=0011] emit_signals: 0.01ms
+[iter=0011] TOTAL_ITERATION: 986.09ms
+
+[iter=0012] topk_get_current_series: 115.66ms
+[iter=0012] topk_batch_dissonance: 212.67ms | n=2000
+[iter=0012] topk_gpu_evaluate_swap_batch: 170.63ms | topk=100,n_candidates=4950
+[iter=0012] find_best_swap: 526.76ms | strategy=top_k_best
+[iter=0012] update_graphs: 269.29ms
+[iter=0012] update_display: 14.26ms | frame=9.4ms,mode=0.0ms,resize=1.6ms,convert=2.7ms,draw=0.2ms
+[iter=0012] update_display: 12.84ms | frame=7.8ms,mode=0.0ms,resize=1.9ms,convert=2.6ms,draw=0.2ms
+[iter=0012] display_sync_wait: 227.94ms
+[iter=0012] execute_swap: 2.91ms
+[iter=0012] high_diss_total_detail: 53.47ms | series=0.0ms,batch=53.5ms,n=2000
+[iter=0012] compute_high_diss_total: 53.72ms
+[iter=0012] count_correct_positions: 172.39ms
+[iter=0012] emit_signals: 0.01ms
+[iter=0012] TOTAL_ITERATION: 984.96ms
+
+[iter=0013] topk_get_current_series: 94.93ms
+[iter=0013] topk_batch_dissonance: 267.10ms | n=2000
+[iter=0013] topk_gpu_evaluate_swap_batch: 175.79ms | topk=100,n_candidates=4950
+[iter=0013] find_best_swap: 557.95ms | strategy=top_k_best
+[iter=0013] update_graphs: 316.47ms
+[iter=0013] update_display: 12.95ms | frame=8.1ms,mode=0.0ms,resize=1.9ms,convert=2.5ms,draw=0.2ms
+[iter=0013] update_display: 12.59ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0013] display_sync_wait: 212.14ms
+[iter=0013] execute_swap: 2.84ms
+[iter=0013] high_diss_total_detail: 53.94ms | series=0.0ms,batch=53.9ms,n=2000
+[iter=0013] compute_high_diss_total: 54.17ms
+[iter=0013] count_correct_positions: 163.33ms
+[iter=0013] emit_signals: 0.01ms
+[iter=0013] TOTAL_ITERATION: 991.39ms
+
+[iter=0014] topk_get_current_series: 111.00ms
+[iter=0014] topk_batch_dissonance: 214.78ms | n=2000
+[iter=0014] topk_gpu_evaluate_swap_batch: 168.73ms | topk=100,n_candidates=4950
+[iter=0014] find_best_swap: 514.67ms | strategy=top_k_best
+[iter=0014] update_graphs: 275.23ms
+[iter=0014] update_display: 12.80ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.8ms,draw=0.2ms
+[iter=0014] update_display: 13.01ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0014] display_sync_wait: 227.56ms
+[iter=0014] execute_swap: 3.35ms
+[iter=0014] high_diss_total_detail: 48.87ms | series=0.0ms,batch=48.9ms,n=2000
+[iter=0014] compute_high_diss_total: 49.11ms
+[iter=0014] count_correct_positions: 167.81ms
+[iter=0014] emit_signals: 0.01ms
+[iter=0014] TOTAL_ITERATION: 963.56ms
+
+[iter=0015] topk_get_current_series: 96.08ms
+[iter=0015] topk_batch_dissonance: 206.49ms | n=2000
+[iter=0015] topk_gpu_evaluate_swap_batch: 135.84ms | topk=100,n_candidates=4950
+[iter=0015] find_best_swap: 468.28ms | strategy=top_k_best
+[iter=0015] update_graphs: 296.63ms
+[iter=0015] update_display: 13.05ms | frame=8.1ms,mode=0.0ms,resize=1.6ms,convert=2.8ms,draw=0.2ms
+[iter=0015] update_display: 12.74ms | frame=7.9ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.3ms
+[iter=0015] display_sync_wait: 278.19ms
+[iter=0015] execute_swap: 3.08ms
+[iter=0015] high_diss_total_detail: 59.18ms | series=0.0ms,batch=59.2ms,n=2000
+[iter=0015] compute_high_diss_total: 59.43ms
+[iter=0015] count_correct_positions: 170.13ms
+[iter=0015] emit_signals: 0.01ms
+[iter=0015] TOTAL_ITERATION: 980.21ms
+
+[iter=0016] topk_get_current_series: 79.12ms
+[iter=0016] topk_batch_dissonance: 229.46ms | n=2000
+[iter=0016] topk_gpu_evaluate_swap_batch: 125.59ms | topk=100,n_candidates=4950
+[iter=0016] find_best_swap: 460.78ms | strategy=top_k_best
+[iter=0016] update_graphs: 307.38ms
+[iter=0016] update_display: 13.25ms | frame=8.6ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0016] update_display: 14.76ms | frame=8.6ms,mode=0.0ms,resize=2.3ms,convert=3.3ms,draw=0.1ms
+[iter=0016] display_sync_wait: 300.90ms
+[iter=0016] execute_swap: 3.27ms
+[iter=0016] high_diss_total_detail: 49.06ms | series=0.0ms,batch=49.1ms,n=2000
+[iter=0016] compute_high_diss_total: 49.31ms
+[iter=0016] count_correct_positions: 170.18ms
+[iter=0016] emit_signals: 0.01ms
+[iter=0016] TOTAL_ITERATION: 985.26ms
+
+[iter=0017] topk_get_current_series: 110.98ms
+[iter=0017] topk_batch_dissonance: 165.00ms | n=2000
+[iter=0017] topk_gpu_evaluate_swap_batch: 148.25ms | topk=100,n_candidates=4950
+[iter=0017] find_best_swap: 463.21ms | strategy=top_k_best
+[iter=0017] update_graphs: 302.20ms
+[iter=0017] update_display: 13.67ms | frame=8.3ms,mode=0.0ms,resize=1.8ms,convert=2.9ms,draw=0.2ms
+[iter=0017] update_display: 12.83ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0017] display_sync_wait: 288.12ms
+[iter=0017] execute_swap: 3.19ms
+[iter=0017] high_diss_total_detail: 50.64ms | series=0.0ms,batch=50.6ms,n=2000
+[iter=0017] compute_high_diss_total: 50.91ms
+[iter=0017] count_correct_positions: 173.96ms
+[iter=0017] emit_signals: 0.01ms
+[iter=0017] TOTAL_ITERATION: 980.23ms
+
+[iter=0018] topk_get_current_series: 112.00ms
+[iter=0018] topk_batch_dissonance: 211.38ms | n=2000
+[iter=0018] topk_gpu_evaluate_swap_batch: 175.21ms | topk=100,n_candidates=4950
+[iter=0018] find_best_swap: 518.43ms | strategy=top_k_best
+[iter=0018] update_graphs: 345.75ms
+[iter=0018] update_display: 13.18ms | frame=8.0ms,mode=0.0ms,resize=1.8ms,convert=2.8ms,draw=0.2ms
+[iter=0018] update_display: 13.18ms | frame=8.1ms,mode=0.0ms,resize=1.6ms,convert=3.0ms,draw=0.2ms
+[iter=0018] display_sync_wait: 294.38ms
+[iter=0018] execute_swap: 3.16ms
+[iter=0018] high_diss_total_detail: 87.82ms | series=0.0ms,batch=87.8ms,n=2000
+[iter=0018] compute_high_diss_total: 88.06ms
+[iter=0018] count_correct_positions: 165.51ms
+[iter=0018] emit_signals: 0.01ms
+[iter=0018] TOTAL_ITERATION: 1070.60ms
+
+[iter=0019] topk_get_current_series: 112.06ms
+[iter=0019] topk_batch_dissonance: 202.26ms | n=2000
+[iter=0019] topk_gpu_evaluate_swap_batch: 110.71ms | topk=100,n_candidates=4950
+[iter=0019] find_best_swap: 445.29ms | strategy=top_k_best
+[iter=0019] update_graphs: 295.71ms
+[iter=0019] update_display: 13.98ms | frame=7.8ms,mode=0.0ms,resize=2.0ms,convert=3.6ms,draw=0.2ms
+[iter=0019] update_display: 14.48ms | frame=7.8ms,mode=0.0ms,resize=2.2ms,convert=3.9ms,draw=0.2ms
+[iter=0019] display_sync_wait: 305.03ms
+[iter=0019] execute_swap: 3.33ms
+[iter=0019] high_diss_total_detail: 56.90ms | series=0.0ms,batch=56.9ms,n=2000
+[iter=0019] compute_high_diss_total: 57.17ms
+[iter=0019] count_correct_positions: 165.53ms
+[iter=0019] emit_signals: 0.01ms
+[iter=0019] TOTAL_ITERATION: 978.24ms
+
+[iter=0020] topk_get_current_series: 95.22ms
+[iter=0020] topk_batch_dissonance: 216.53ms | n=2000
+[iter=0020] topk_gpu_evaluate_swap_batch: 115.18ms | topk=100,n_candidates=4950
+[iter=0020] find_best_swap: 454.43ms | strategy=top_k_best
+[iter=0020] update_graphs: 299.45ms
+[iter=0020] update_display: 12.99ms | frame=7.9ms,mode=0.0ms,resize=1.6ms,convert=3.0ms,draw=0.2ms
+[iter=0020] update_display: 12.72ms | frame=7.9ms,mode=0.0ms,resize=1.6ms,convert=2.6ms,draw=0.2ms
+[iter=0020] display_sync_wait: 294.72ms
+[iter=0020] execute_swap: 3.17ms
+[iter=0020] high_diss_total_detail: 49.94ms | series=0.0ms,batch=49.9ms,n=2000
+[iter=0020] compute_high_diss_total: 50.21ms
+[iter=0020] count_correct_positions: 169.17ms
+[iter=0020] emit_signals: 0.02ms
+[iter=0020] TOTAL_ITERATION: 972.98ms
+
+[iter=0021] topk_get_current_series: 110.81ms
+[iter=0021] topk_batch_dissonance: 207.21ms | n=2000
+[iter=0021] topk_gpu_evaluate_swap_batch: 104.07ms | topk=100,n_candidates=4950
+[iter=0021] find_best_swap: 448.28ms | strategy=top_k_best
+[iter=0021] update_graphs: 286.43ms
+[iter=0021] update_display: 12.56ms | frame=7.9ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0021] update_display: 12.72ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.7ms,draw=0.2ms
+[iter=0021] display_sync_wait: 292.41ms
+[iter=0021] execute_swap: 3.08ms
+[iter=0021] high_diss_total_detail: 51.73ms | series=0.0ms,batch=51.7ms,n=2000
+[iter=0021] compute_high_diss_total: 52.06ms
+[iter=0021] count_correct_positions: 165.30ms
+[iter=0021] emit_signals: 0.01ms
+[iter=0021] TOTAL_ITERATION: 962.22ms
+
+[iter=0022] topk_get_current_series: 109.94ms
+[iter=0022] topk_batch_dissonance: 208.07ms | n=2000
+[iter=0022] topk_gpu_evaluate_swap_batch: 116.54ms | topk=100,n_candidates=4950
+[iter=0022] find_best_swap: 461.52ms | strategy=top_k_best
+[iter=0022] update_graphs: 300.79ms
+[iter=0022] update_display: 13.05ms | frame=8.0ms,mode=0.0ms,resize=1.8ms,convert=2.7ms,draw=0.2ms
+[iter=0022] update_display: 12.83ms | frame=7.8ms,mode=0.0ms,resize=1.7ms,convert=2.8ms,draw=0.2ms
+[iter=0022] display_sync_wait: 290.70ms
+[iter=0022] execute_swap: 3.12ms
+[iter=0022] high_diss_total_detail: 49.20ms | series=0.0ms,batch=49.2ms,n=2000
+[iter=0022] compute_high_diss_total: 49.45ms
+[iter=0022] count_correct_positions: 161.82ms
+[iter=0022] emit_signals: 0.01ms
+[iter=0022] TOTAL_ITERATION: 983.04ms
+
+[iter=0023] topk_get_current_series: 109.81ms
+[iter=0023] topk_batch_dissonance: 206.45ms | n=2000
+[iter=0023] topk_gpu_evaluate_swap_batch: 199.53ms | topk=100,n_candidates=4950
+[iter=0023] find_best_swap: 542.99ms | strategy=top_k_best
+[iter=0023] update_graphs: 323.73ms
+[iter=0023] update_display: 12.33ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0023] update_display: 12.58ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0023] display_sync_wait: 251.52ms
+[iter=0023] execute_swap: 3.43ms
+[iter=0023] high_diss_total_detail: 66.47ms | series=0.0ms,batch=66.5ms,n=2000
+[iter=0023] compute_high_diss_total: 66.72ms
+[iter=0023] count_correct_positions: 164.62ms
+[iter=0023] emit_signals: 0.01ms
+[iter=0023] TOTAL_ITERATION: 1030.02ms
+
+[iter=0024] topk_get_current_series: 95.04ms
+[iter=0024] topk_batch_dissonance: 209.40ms | n=2000
+[iter=0024] topk_gpu_evaluate_swap_batch: 132.56ms | topk=100,n_candidates=4950
+[iter=0024] find_best_swap: 472.89ms | strategy=top_k_best
+[iter=0024] update_graphs: 274.33ms
+[iter=0024] update_display: 12.52ms | frame=7.9ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0024] update_display: 12.85ms | frame=8.0ms,mode=0.0ms,resize=1.6ms,convert=2.8ms,draw=0.2ms
+[iter=0024] display_sync_wait: 246.95ms
+[iter=0024] execute_swap: 2.78ms
+[iter=0024] high_diss_total_detail: 49.48ms | series=0.0ms,batch=49.5ms,n=2000
+[iter=0024] compute_high_diss_total: 49.74ms
+[iter=0024] count_correct_positions: 162.89ms
+[iter=0024] emit_signals: 0.01ms
+[iter=0024] TOTAL_ITERATION: 951.01ms
+
+[iter=0025] topk_get_current_series: 111.00ms
+[iter=0025] topk_batch_dissonance: 187.42ms | n=2000
+[iter=0025] topk_gpu_evaluate_swap_batch: 165.90ms | topk=100,n_candidates=4950
+[iter=0025] find_best_swap: 482.05ms | strategy=top_k_best
+[iter=0025] update_graphs: 271.76ms
+[iter=0025] update_display: 12.85ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.8ms,draw=0.2ms
+[iter=0025] update_display: 13.41ms | frame=8.5ms,mode=0.0ms,resize=1.7ms,convert=2.7ms,draw=0.2ms
+[iter=0025] display_sync_wait: 224.29ms
+[iter=0025] execute_swap: 3.00ms
+[iter=0025] high_diss_total_detail: 70.36ms | series=0.0ms,batch=70.4ms,n=2000
+[iter=0025] compute_high_diss_total: 70.60ms
+[iter=0025] count_correct_positions: 167.14ms
+[iter=0025] emit_signals: 0.01ms
+[iter=0025] TOTAL_ITERATION: 948.58ms
+
+[iter=0026] topk_get_current_series: 110.92ms
+[iter=0026] topk_batch_dissonance: 217.59ms | n=2000
+[iter=0026] topk_gpu_evaluate_swap_batch: 173.22ms | topk=100,n_candidates=4950
+[iter=0026] find_best_swap: 522.52ms | strategy=top_k_best
+[iter=0026] update_graphs: 268.13ms
+[iter=0026] update_display: 13.20ms | frame=7.9ms,mode=0.0ms,resize=1.9ms,convert=2.8ms,draw=0.2ms
+[iter=0026] update_display: 13.33ms | frame=7.9ms,mode=0.0ms,resize=1.9ms,convert=3.0ms,draw=0.2ms
+[iter=0026] display_sync_wait: 216.97ms
+[iter=0026] execute_swap: 3.75ms
+[iter=0026] high_diss_total_detail: 48.64ms | series=0.0ms,batch=48.6ms,n=2000
+[iter=0026] compute_high_diss_total: 48.93ms
+[iter=0026] count_correct_positions: 165.66ms
+[iter=0026] emit_signals: 0.01ms
+[iter=0026] TOTAL_ITERATION: 959.10ms
+
+[iter=0027] topk_get_current_series: 95.98ms
+[iter=0027] topk_batch_dissonance: 219.57ms | n=2000
+[iter=0027] topk_gpu_evaluate_swap_batch: 175.53ms | topk=100,n_candidates=4950
+[iter=0027] find_best_swap: 512.87ms | strategy=top_k_best
+[iter=0027] update_graphs: 270.63ms
+[iter=0027] update_display: 12.98ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0027] update_display: 12.56ms | frame=8.0ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0027] display_sync_wait: 214.60ms
+[iter=0027] execute_swap: 4.01ms
+[iter=0027] high_diss_total_detail: 49.44ms | series=0.0ms,batch=49.4ms,n=2000
+[iter=0027] compute_high_diss_total: 49.72ms
+[iter=0027] count_correct_positions: 161.99ms
+[iter=0027] emit_signals: 0.01ms
+[iter=0027] TOTAL_ITERATION: 944.34ms
+
+[iter=0028] topk_get_current_series: 111.03ms
+[iter=0028] topk_batch_dissonance: 206.70ms | n=2000
+[iter=0028] topk_gpu_evaluate_swap_batch: 167.62ms | topk=100,n_candidates=4950
+[iter=0028] find_best_swap: 504.76ms | strategy=top_k_best
+[iter=0028] update_graphs: 269.69ms
+[iter=0028] update_display: 12.54ms | frame=7.8ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0028] update_display: 12.49ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.7ms,draw=0.2ms
+[iter=0028] display_sync_wait: 237.98ms
+[iter=0028] execute_swap: 4.18ms
+[iter=0028] high_diss_total_detail: 48.88ms | series=0.0ms,batch=48.9ms,n=2000
+[iter=0028] compute_high_diss_total: 49.15ms
+[iter=0028] count_correct_positions: 162.07ms
+[iter=0028] emit_signals: 0.01ms
+[iter=0028] TOTAL_ITERATION: 959.96ms
+
+[iter=0029] topk_get_current_series: 94.95ms
+[iter=0029] topk_batch_dissonance: 241.60ms | n=2000
+[iter=0029] topk_gpu_evaluate_swap_batch: 222.75ms | topk=100,n_candidates=4950
+[iter=0029] find_best_swap: 586.02ms | strategy=top_k_best
+[iter=0029] update_graphs: 325.64ms
+[iter=0029] update_display: 14.17ms | frame=9.2ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0029] update_display: 12.78ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.8ms,draw=0.2ms
+[iter=0029] display_sync_wait: 217.23ms
+[iter=0029] execute_swap: 3.22ms
+[iter=0029] high_diss_total_detail: 49.06ms | series=0.0ms,batch=49.1ms,n=2000
+[iter=0029] compute_high_diss_total: 49.33ms
+[iter=0029] count_correct_positions: 160.08ms
+[iter=0029] emit_signals: 0.01ms
+[iter=0029] TOTAL_ITERATION: 1018.27ms
+
+[iter=0030] topk_get_current_series: 111.88ms
+[iter=0030] topk_batch_dissonance: 217.65ms | n=2000
+[iter=0030] topk_gpu_evaluate_swap_batch: 120.70ms | topk=100,n_candidates=4950
+[iter=0030] find_best_swap: 479.89ms | strategy=top_k_best
+[iter=0030] update_graphs: 278.89ms
+[iter=0030] update_display: 12.81ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.7ms,draw=0.2ms
+[iter=0030] update_display: 12.53ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0030] display_sync_wait: 265.95ms
+[iter=0030] execute_swap: 3.04ms
+[iter=0030] high_diss_total_detail: 49.61ms | series=0.0ms,batch=49.6ms,n=2000
+[iter=0030] compute_high_diss_total: 49.85ms
+[iter=0030] count_correct_positions: 168.28ms
+[iter=0030] emit_signals: 0.01ms
+[iter=0030] TOTAL_ITERATION: 985.82ms
+
+[iter=0031] topk_get_current_series: 79.91ms
+[iter=0031] topk_batch_dissonance: 213.88ms | n=2000
+[iter=0031] topk_gpu_evaluate_swap_batch: 116.55ms | topk=100,n_candidates=4950
+[iter=0031] find_best_swap: 437.81ms | strategy=top_k_best
+[iter=0031] update_graphs: 280.94ms
+[iter=0031] update_display: 13.03ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=3.0ms,draw=0.2ms
+[iter=0031] update_display: 12.39ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0031] display_sync_wait: 285.71ms
+[iter=0031] execute_swap: 3.42ms
+[iter=0031] high_diss_total_detail: 52.04ms | series=0.0ms,batch=52.0ms,n=2000
+[iter=0031] compute_high_diss_total: 52.29ms
+[iter=0031] count_correct_positions: 169.70ms
+[iter=0031] emit_signals: 0.01ms
+[iter=0031] TOTAL_ITERATION: 949.74ms
+
+[iter=0032] topk_get_current_series: 110.92ms
+[iter=0032] topk_batch_dissonance: 205.28ms | n=2000
+[iter=0032] topk_gpu_evaluate_swap_batch: 177.50ms | topk=100,n_candidates=4950
+[iter=0032] find_best_swap: 519.74ms | strategy=top_k_best
+[iter=0032] update_graphs: 291.62ms
+[iter=0032] update_display: 13.12ms | frame=8.0ms,mode=0.0ms,resize=1.8ms,convert=2.8ms,draw=0.2ms
+[iter=0032] update_display: 13.13ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=3.0ms,draw=0.2ms
+[iter=0032] display_sync_wait: 216.81ms
+[iter=0032] execute_swap: 2.97ms
+[iter=0032] high_diss_total_detail: 69.29ms | series=0.0ms,batch=69.3ms,n=2000
+[iter=0032] compute_high_diss_total: 69.63ms
+[iter=0032] count_correct_positions: 167.42ms
+[iter=0032] emit_signals: 0.01ms
+[iter=0032] TOTAL_ITERATION: 977.68ms
+
+[iter=0033] topk_get_current_series: 94.96ms
+[iter=0033] topk_batch_dissonance: 222.07ms | n=2000
+[iter=0033] topk_gpu_evaluate_swap_batch: 174.06ms | topk=100,n_candidates=4950
+[iter=0033] find_best_swap: 516.98ms | strategy=top_k_best
+[iter=0033] update_graphs: 281.14ms
+[iter=0033] update_display: 13.52ms | frame=8.6ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0033] update_display: 12.68ms | frame=7.9ms,mode=0.0ms,resize=1.6ms,convert=2.6ms,draw=0.2ms
+[iter=0033] display_sync_wait: 219.70ms
+[iter=0033] execute_swap: 3.03ms
+[iter=0033] high_diss_total_detail: 58.80ms | series=0.0ms,batch=58.8ms,n=2000
+[iter=0033] compute_high_diss_total: 59.04ms
+[iter=0033] count_correct_positions: 167.52ms
+[iter=0033] emit_signals: 0.01ms
+[iter=0033] TOTAL_ITERATION: 983.79ms
+
+[iter=0034] topk_get_current_series: 109.14ms
+[iter=0034] topk_batch_dissonance: 204.64ms | n=2000
+[iter=0034] topk_gpu_evaluate_swap_batch: 181.98ms | topk=100,n_candidates=4950
+[iter=0034] find_best_swap: 522.30ms | strategy=top_k_best
+[iter=0034] update_graphs: 283.17ms
+[iter=0034] update_display: 13.02ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=3.0ms,draw=0.2ms
+[iter=0034] update_display: 12.59ms | frame=8.0ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0034] display_sync_wait: 213.74ms
+[iter=0034] execute_swap: 2.88ms
+[iter=0034] high_diss_total_detail: 49.50ms | series=0.0ms,batch=49.5ms,n=2000
+[iter=0034] compute_high_diss_total: 49.75ms
+[iter=0034] count_correct_positions: 170.32ms
+[iter=0034] emit_signals: 0.01ms
+[iter=0034] TOTAL_ITERATION: 960.10ms
+
+[iter=0035] topk_get_current_series: 110.07ms
+[iter=0035] topk_batch_dissonance: 126.97ms | n=2000
+[iter=0035] topk_gpu_evaluate_swap_batch: 257.95ms | topk=100,n_candidates=4950
+[iter=0035] find_best_swap: 541.94ms | strategy=top_k_best
+[iter=0035] update_graphs: 372.28ms
+[iter=0035] update_display: 12.71ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.7ms,draw=0.2ms
+[iter=0035] update_display: 12.53ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0035] display_sync_wait: 381.35ms
+[iter=0035] execute_swap: 3.36ms
+[iter=0035] high_diss_total_detail: 49.91ms | series=0.0ms,batch=49.9ms,n=2000
+[iter=0035] compute_high_diss_total: 50.18ms
+[iter=0035] count_correct_positions: 171.04ms
+[iter=0035] emit_signals: 0.01ms
+[iter=0035] TOTAL_ITERATION: 1151.58ms
+
+[iter=0036] topk_get_current_series: 95.04ms
+[iter=0036] topk_batch_dissonance: 232.28ms | n=2000
+[iter=0036] topk_gpu_evaluate_swap_batch: 128.07ms | topk=100,n_candidates=4950
+[iter=0036] find_best_swap: 479.78ms | strategy=top_k_best
+[iter=0036] update_graphs: 299.86ms
+[iter=0036] update_display: 14.90ms | frame=9.8ms,mode=0.0ms,resize=1.7ms,convert=2.8ms,draw=0.2ms
+[iter=0036] update_display: 13.92ms | frame=8.7ms,mode=0.0ms,resize=1.7ms,convert=3.0ms,draw=0.2ms
+[iter=0036] display_sync_wait: 307.40ms
+[iter=0036] execute_swap: 3.59ms
+[iter=0036] high_diss_total_detail: 49.29ms | series=0.0ms,batch=49.3ms,n=2000
+[iter=0036] compute_high_diss_total: 49.54ms
+[iter=0036] count_correct_positions: 182.36ms
+[iter=0036] emit_signals: 0.01ms
+[iter=0036] TOTAL_ITERATION: 1023.42ms
+
+[iter=0037] topk_get_current_series: 111.07ms
+[iter=0037] topk_batch_dissonance: 222.51ms | n=2000
+[iter=0037] topk_gpu_evaluate_swap_batch: 166.87ms | topk=100,n_candidates=4950
+[iter=0037] find_best_swap: 528.19ms | strategy=top_k_best
+[iter=0037] update_graphs: 300.63ms
+[iter=0037] update_display: 14.86ms | frame=9.2ms,mode=0.0ms,resize=1.7ms,convert=3.0ms,draw=0.2ms
+[iter=0037] update_display: 12.57ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0037] display_sync_wait: 234.63ms
+[iter=0037] execute_swap: 3.06ms
+[iter=0037] high_diss_total_detail: 56.18ms | series=0.0ms,batch=56.2ms,n=2000
+[iter=0037] compute_high_diss_total: 56.43ms
+[iter=0037] count_correct_positions: 161.51ms
+[iter=0037] emit_signals: 0.01ms
+[iter=0037] TOTAL_ITERATION: 997.57ms
+
+[iter=0038] topk_get_current_series: 111.02ms
+[iter=0038] topk_batch_dissonance: 213.82ms | n=2000
+[iter=0038] topk_gpu_evaluate_swap_batch: 194.36ms | topk=100,n_candidates=4950
+[iter=0038] find_best_swap: 539.80ms | strategy=top_k_best
+[iter=0038] update_graphs: 295.83ms
+[iter=0038] update_display: 15.79ms | frame=11.2ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0038] update_display: 12.73ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.8ms,draw=0.2ms
+[iter=0038] display_sync_wait: 221.74ms
+[iter=0038] execute_swap: 3.35ms
+[iter=0038] high_diss_total_detail: 49.47ms | series=0.0ms,batch=49.5ms,n=2000
+[iter=0038] compute_high_diss_total: 49.76ms
+[iter=0038] count_correct_positions: 160.06ms
+[iter=0038] emit_signals: 0.01ms
+[iter=0038] TOTAL_ITERATION: 976.16ms
+
+[iter=0039] topk_get_current_series: 110.95ms
+[iter=0039] topk_batch_dissonance: 211.52ms | n=2000
+[iter=0039] topk_gpu_evaluate_swap_batch: 122.96ms | topk=100,n_candidates=4950
+[iter=0039] find_best_swap: 468.97ms | strategy=top_k_best
+[iter=0039] update_graphs: 287.23ms
+[iter=0039] update_display: 13.61ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=3.3ms,draw=0.2ms
+[iter=0039] update_display: 12.39ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0039] display_sync_wait: 298.56ms
+[iter=0039] execute_swap: 3.33ms
+[iter=0039] high_diss_total_detail: 55.61ms | series=0.0ms,batch=55.6ms,n=2000
+[iter=0039] compute_high_diss_total: 55.86ms
+[iter=0039] count_correct_positions: 180.15ms
+[iter=0039] emit_signals: 0.01ms
+[iter=0039] TOTAL_ITERATION: 1029.56ms
+
+[iter=0040] topk_get_current_series: 107.90ms
+[iter=0040] topk_batch_dissonance: 201.03ms | n=2000
+[iter=0040] topk_gpu_evaluate_swap_batch: 129.19ms | topk=100,n_candidates=4950
+[iter=0040] find_best_swap: 441.91ms | strategy=top_k_best
+[iter=0040] update_graphs: 351.12ms
+[iter=0040] update_display: 12.35ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0040] update_display: 12.93ms | frame=7.9ms,mode=0.0ms,resize=1.9ms,convert=2.6ms,draw=0.2ms
+[iter=0040] display_sync_wait: 338.81ms
+[iter=0040] execute_swap: 3.16ms
+[iter=0040] high_diss_total_detail: 49.20ms | series=0.0ms,batch=49.2ms,n=2000
+[iter=0040] compute_high_diss_total: 49.44ms
+[iter=0040] count_correct_positions: 162.00ms
+[iter=0040] emit_signals: 0.01ms
+[iter=0040] TOTAL_ITERATION: 996.46ms
+
+[iter=0041] topk_get_current_series: 110.01ms
+[iter=0041] topk_batch_dissonance: 232.51ms | n=2000
+[iter=0041] topk_gpu_evaluate_swap_batch: 173.15ms | topk=100,n_candidates=4950
+[iter=0041] find_best_swap: 540.55ms | strategy=top_k_best
+[iter=0041] update_graphs: 294.40ms
+[iter=0041] update_display: 12.21ms | frame=7.8ms,mode=0.0ms,resize=1.4ms,convert=2.4ms,draw=0.2ms
+[iter=0041] update_display: 12.87ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=3.0ms,draw=0.2ms
+[iter=0041] display_sync_wait: 224.53ms
+[iter=0041] execute_swap: 3.27ms
+[iter=0041] high_diss_total_detail: 50.00ms | series=0.0ms,batch=50.0ms,n=2000
+[iter=0041] compute_high_diss_total: 50.24ms
+[iter=0041] count_correct_positions: 166.65ms
+[iter=0041] emit_signals: 0.02ms
+[iter=0041] TOTAL_ITERATION: 986.33ms
+
+[iter=0042] topk_get_current_series: 109.00ms
+[iter=0042] topk_batch_dissonance: 218.00ms | n=2000
+[iter=0042] topk_gpu_evaluate_swap_batch: 151.38ms | topk=100,n_candidates=4950
+[iter=0042] find_best_swap: 517.30ms | strategy=top_k_best
+[iter=0042] update_graphs: 295.64ms
+[iter=0042] update_display: 12.57ms | frame=8.1ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0042] update_display: 12.54ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.7ms,draw=0.2ms
+[iter=0042] display_sync_wait: 233.88ms
+[iter=0042] execute_swap: 3.22ms
+[iter=0042] high_diss_total_detail: 49.64ms | series=0.0ms,batch=49.6ms,n=2000
+[iter=0042] compute_high_diss_total: 49.88ms
+[iter=0042] count_correct_positions: 162.78ms
+[iter=0042] emit_signals: 0.01ms
+[iter=0042] TOTAL_ITERATION: 973.79ms
+
+[iter=0043] topk_get_current_series: 111.09ms
+[iter=0043] topk_batch_dissonance: 237.56ms | n=2000
+[iter=0043] topk_gpu_evaluate_swap_batch: 172.35ms | topk=100,n_candidates=4950
+[iter=0043] find_best_swap: 548.70ms | strategy=top_k_best
+[iter=0043] update_graphs: 297.65ms
+[iter=0043] update_display: 13.43ms | frame=8.0ms,mode=0.0ms,resize=1.6ms,convert=3.2ms,draw=0.2ms
+[iter=0043] update_display: 12.60ms | frame=7.9ms,mode=0.0ms,resize=1.7ms,convert=2.5ms,draw=0.2ms
+[iter=0043] display_sync_wait: 237.02ms
+[iter=0043] execute_swap: 3.24ms
+[iter=0043] high_diss_total_detail: 50.07ms | series=0.0ms,batch=50.1ms,n=2000
+[iter=0043] compute_high_diss_total: 50.57ms
+[iter=0043] count_correct_positions: 171.57ms
+[iter=0043] emit_signals: 0.01ms
+[iter=0043] TOTAL_ITERATION: 1012.40ms
+
+[iter=0044] topk_get_current_series: 80.05ms
+[iter=0044] topk_batch_dissonance: 264.41ms | n=2000
+[iter=0044] topk_gpu_evaluate_swap_batch: 165.74ms | topk=100,n_candidates=4950
+[iter=0044] find_best_swap: 536.99ms | strategy=top_k_best
+[iter=0044] update_graphs: 294.86ms
+[iter=0044] update_display: 12.51ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0044] update_display: 12.62ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.7ms,draw=0.2ms
+[iter=0044] display_sync_wait: 225.46ms
+[iter=0044] execute_swap: 3.48ms
+[iter=0044] high_diss_total_detail: 55.98ms | series=0.0ms,batch=56.0ms,n=2000
+[iter=0044] compute_high_diss_total: 56.21ms
+[iter=0044] count_correct_positions: 171.46ms
+[iter=0044] emit_signals: 0.01ms
+[iter=0044] TOTAL_ITERATION: 994.72ms
+
+[iter=0045] topk_get_current_series: 63.91ms
+[iter=0045] topk_batch_dissonance: 247.20ms | n=2000
+[iter=0045] topk_gpu_evaluate_swap_batch: 208.53ms | topk=100,n_candidates=4950
+[iter=0045] find_best_swap: 541.92ms | strategy=top_k_best
+[iter=0045] update_graphs: 297.30ms
+[iter=0045] update_display: 12.31ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0045] update_display: 12.86ms | frame=7.7ms,mode=0.0ms,resize=1.7ms,convert=2.8ms,draw=0.2ms
+[iter=0045] display_sync_wait: 222.38ms
+[iter=0045] execute_swap: 3.23ms
+[iter=0045] high_diss_total_detail: 50.12ms | series=0.0ms,batch=50.1ms,n=2000
+[iter=0045] compute_high_diss_total: 50.34ms
+[iter=0045] count_correct_positions: 165.25ms
+[iter=0045] emit_signals: 0.01ms
+[iter=0045] TOTAL_ITERATION: 984.62ms
+
+[iter=0046] topk_get_current_series: 110.96ms
+[iter=0046] topk_batch_dissonance: 205.71ms | n=2000
+[iter=0046] topk_gpu_evaluate_swap_batch: 220.27ms | topk=100,n_candidates=4950
+[iter=0046] find_best_swap: 558.62ms | strategy=top_k_best
+[iter=0046] update_graphs: 320.40ms
+[iter=0046] update_display: 12.33ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0046] update_display: 12.66ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0046] display_sync_wait: 212.54ms
+[iter=0046] execute_swap: 3.18ms
+[iter=0046] high_diss_total_detail: 50.77ms | series=0.0ms,batch=50.8ms,n=2000
+[iter=0046] compute_high_diss_total: 51.02ms
+[iter=0046] count_correct_positions: 160.35ms
+[iter=0046] emit_signals: 0.01ms
+[iter=0046] TOTAL_ITERATION: 986.83ms
+
+[iter=0047] topk_get_current_series: 111.95ms
+[iter=0047] topk_batch_dissonance: 190.07ms | n=2000
+[iter=0047] topk_gpu_evaluate_swap_batch: 128.91ms | topk=100,n_candidates=4950
+[iter=0047] find_best_swap: 459.05ms | strategy=top_k_best
+[iter=0047] update_graphs: 268.63ms
+[iter=0047] update_display: 12.57ms | frame=8.1ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0047] update_display: 12.63ms | frame=7.9ms,mode=0.0ms,resize=1.7ms,convert=2.5ms,draw=0.2ms
+[iter=0047] display_sync_wait: 265.16ms
+[iter=0047] execute_swap: 3.23ms
+[iter=0047] high_diss_total_detail: 99.12ms | series=0.0ms,batch=99.1ms,n=2000
+[iter=0047] compute_high_diss_total: 99.37ms
+[iter=0047] count_correct_positions: 164.94ms
+[iter=0047] emit_signals: 0.01ms
+[iter=0047] TOTAL_ITERATION: 992.83ms
+
+[iter=0048] topk_get_current_series: 101.71ms
+[iter=0048] topk_batch_dissonance: 250.74ms | n=2000
+[iter=0048] topk_gpu_evaluate_swap_batch: 178.09ms | topk=100,n_candidates=4950
+[iter=0048] find_best_swap: 557.05ms | strategy=top_k_best
+[iter=0048] update_graphs: 279.82ms
+[iter=0048] update_display: 12.25ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.4ms,draw=0.2ms
+[iter=0048] update_display: 12.85ms | frame=7.9ms,mode=0.0ms,resize=1.9ms,convert=2.5ms,draw=0.2ms
+[iter=0048] display_sync_wait: 209.08ms
+[iter=0048] execute_swap: 3.37ms
+[iter=0048] high_diss_total_detail: 58.07ms | series=0.0ms,batch=58.1ms,n=2000
+[iter=0048] compute_high_diss_total: 58.31ms
+[iter=0048] count_correct_positions: 167.39ms
+[iter=0048] emit_signals: 0.01ms
+[iter=0048] TOTAL_ITERATION: 996.32ms
+
+[iter=0049] topk_get_current_series: 94.97ms
+[iter=0049] topk_batch_dissonance: 230.73ms | n=2000
+[iter=0049] topk_gpu_evaluate_swap_batch: 157.20ms | topk=100,n_candidates=4950
+[iter=0049] find_best_swap: 510.46ms | strategy=top_k_best
+[iter=0049] update_graphs: 273.05ms
+[iter=0049] update_display: 12.65ms | frame=8.0ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0049] update_display: 12.86ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.8ms,draw=0.2ms
+[iter=0049] display_sync_wait: 224.13ms
+[iter=0049] execute_swap: 3.25ms
+[iter=0049] high_diss_total_detail: 55.99ms | series=0.0ms,batch=56.0ms,n=2000
+[iter=0049] compute_high_diss_total: 56.24ms
+[iter=0049] count_correct_positions: 163.09ms
+[iter=0049] emit_signals: 0.01ms
+[iter=0049] gpu_memory_cleanup: 171.86ms
+[iter=0049] TOTAL_ITERATION: 1146.24ms
+
+[iter=0050] topk_get_current_series: 93.03ms
+[iter=0050] topk_batch_dissonance: 65.65ms | n=2000
+[iter=0050] update_graphs: 286.55ms
+[iter=0050] topk_gpu_evaluate_swap_batch: 191.08ms | topk=100,n_candidates=4950
+[iter=0050] find_best_swap: 361.18ms | strategy=top_k_best
+[iter=0050] update_display: 12.62ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.7ms,draw=0.2ms
+[iter=0050] update_display: 12.60ms | frame=7.8ms,mode=0.0ms,resize=1.8ms,convert=2.5ms,draw=0.2ms
+[iter=0050] display_sync_wait: 185.10ms
+[iter=0050] execute_swap: 3.86ms
+[iter=0050] high_diss_total_detail: 50.09ms | series=0.0ms,batch=50.1ms,n=2000
+[iter=0050] compute_high_diss_total: 50.35ms
+[iter=0050] count_correct_positions: 166.61ms
+[iter=0050] emit_signals: 0.01ms
+[iter=0050] TOTAL_ITERATION: 768.20ms
+
+[iter=0051] topk_get_current_series: 86.87ms
+[iter=0051] topk_batch_dissonance: 263.97ms | n=2000
+[iter=0051] topk_gpu_evaluate_swap_batch: 166.59ms | topk=100,n_candidates=4950
+[iter=0051] find_best_swap: 547.36ms | strategy=top_k_best
+[iter=0051] update_graphs: 286.20ms
+[iter=0051] update_display: 12.64ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0051] update_display: 12.59ms | frame=7.9ms,mode=0.0ms,resize=1.4ms,convert=2.7ms,draw=0.2ms
+[iter=0051] display_sync_wait: 230.97ms
+[iter=0051] execute_swap: 3.61ms
+[iter=0051] high_diss_total_detail: 56.10ms | series=0.0ms,batch=56.1ms,n=2000
+[iter=0051] compute_high_diss_total: 56.37ms
+[iter=0051] count_correct_positions: 178.82ms
+[iter=0051] emit_signals: 0.01ms
+[iter=0051] TOTAL_ITERATION: 1020.05ms
+
+[iter=0052] topk_get_current_series: 109.89ms
+[iter=0052] topk_batch_dissonance: 217.41ms | n=2000
+[iter=0052] topk_gpu_evaluate_swap_batch: 238.19ms | topk=100,n_candidates=4950
+[iter=0052] find_best_swap: 586.16ms | strategy=top_k_best
+[iter=0052] update_graphs: 321.70ms
+[iter=0052] update_display: 12.44ms | frame=7.8ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0052] update_display: 12.59ms | frame=7.9ms,mode=0.0ms,resize=1.7ms,convert=2.4ms,draw=0.1ms
+[iter=0052] display_sync_wait: 229.79ms
+[iter=0052] execute_swap: 3.51ms
+[iter=0052] high_diss_total_detail: 51.30ms | series=0.0ms,batch=51.3ms,n=2000
+[iter=0052] compute_high_diss_total: 51.55ms
+[iter=0052] count_correct_positions: 175.09ms
+[iter=0052] emit_signals: 0.01ms
+[iter=0052] TOTAL_ITERATION: 1046.82ms
+
+[iter=0053] topk_get_current_series: 111.95ms
+[iter=0053] topk_batch_dissonance: 206.16ms | n=2000
+[iter=0053] topk_gpu_evaluate_swap_batch: 130.41ms | topk=100,n_candidates=4950
+[iter=0053] find_best_swap: 471.13ms | strategy=top_k_best
+[iter=0053] update_graphs: 281.06ms
+[iter=0053] update_display: 12.32ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0053] update_display: 13.02ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=3.0ms,draw=0.2ms
+[iter=0053] display_sync_wait: 260.92ms
+[iter=0053] execute_swap: 3.44ms
+[iter=0053] high_diss_total_detail: 49.62ms | series=0.0ms,batch=49.6ms,n=2000
+[iter=0053] compute_high_diss_total: 49.86ms
+[iter=0053] count_correct_positions: 173.16ms
+[iter=0053] emit_signals: 0.02ms
+[iter=0053] TOTAL_ITERATION: 972.92ms
+
+[iter=0054] topk_get_current_series: 110.96ms
+[iter=0054] topk_batch_dissonance: 218.75ms | n=2000
+[iter=0054] topk_gpu_evaluate_swap_batch: 118.47ms | topk=100,n_candidates=4950
+[iter=0054] find_best_swap: 469.11ms | strategy=top_k_best
+[iter=0054] update_graphs: 272.69ms
+[iter=0054] update_display: 12.44ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0054] update_display: 12.62ms | frame=7.8ms,mode=0.0ms,resize=1.8ms,convert=2.5ms,draw=0.2ms
+[iter=0054] display_sync_wait: 277.98ms
+[iter=0054] execute_swap: 3.15ms
+[iter=0054] high_diss_total_detail: 62.64ms | series=0.0ms,batch=62.6ms,n=2000
+[iter=0054] compute_high_diss_total: 62.89ms
+[iter=0054] count_correct_positions: 171.11ms
+[iter=0054] emit_signals: 0.01ms
+[iter=0054] TOTAL_ITERATION: 985.33ms
+
+[iter=0055] topk_get_current_series: 48.11ms
+[iter=0055] topk_batch_dissonance: 279.45ms | n=2000
+[iter=0055] topk_gpu_evaluate_swap_batch: 173.62ms | topk=100,n_candidates=4950
+[iter=0055] find_best_swap: 528.32ms | strategy=top_k_best
+[iter=0055] update_graphs: 279.88ms
+[iter=0055] update_display: 12.63ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.1ms
+[iter=0055] update_display: 14.61ms | frame=9.6ms,mode=0.0ms,resize=2.0ms,convert=2.5ms,draw=0.1ms
+[iter=0055] display_sync_wait: 218.94ms
+[iter=0055] execute_swap: 3.16ms
+[iter=0055] high_diss_total_detail: 54.72ms | series=0.0ms,batch=54.7ms,n=2000
+[iter=0055] compute_high_diss_total: 54.96ms
+[iter=0055] count_correct_positions: 173.01ms
+[iter=0055] emit_signals: 0.01ms
+[iter=0055] TOTAL_ITERATION: 979.50ms
+
+[iter=0056] topk_get_current_series: 110.83ms
+[iter=0056] topk_batch_dissonance: 205.40ms | n=2000
+[iter=0056] topk_gpu_evaluate_swap_batch: 118.64ms | topk=100,n_candidates=4950
+[iter=0056] find_best_swap: 454.58ms | strategy=top_k_best
+[iter=0056] update_graphs: 281.83ms
+[iter=0056] update_display: 12.89ms | frame=8.3ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0056] update_display: 13.15ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=3.1ms,draw=0.2ms
+[iter=0056] display_sync_wait: 285.36ms
+[iter=0056] execute_swap: 3.72ms
+[iter=0056] high_diss_total_detail: 52.51ms | series=0.0ms,batch=52.5ms,n=2000
+[iter=0056] compute_high_diss_total: 52.77ms
+[iter=0056] count_correct_positions: 165.95ms
+[iter=0056] emit_signals: 0.01ms
+[iter=0056] TOTAL_ITERATION: 982.88ms
+
+[iter=0057] topk_get_current_series: 110.97ms
+[iter=0057] topk_batch_dissonance: 208.11ms | n=2000
+[iter=0057] topk_gpu_evaluate_swap_batch: 134.11ms | topk=100,n_candidates=4950
+[iter=0057] find_best_swap: 467.99ms | strategy=top_k_best
+[iter=0057] update_graphs: 329.44ms
+[iter=0057] update_display: 12.64ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.8ms,draw=0.2ms
+[iter=0057] update_display: 12.63ms | frame=7.9ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0057] display_sync_wait: 300.20ms
+[iter=0057] execute_swap: 3.50ms
+[iter=0057] high_diss_total_detail: 55.35ms | series=0.0ms,batch=55.4ms,n=2000
+[iter=0057] compute_high_diss_total: 55.61ms
+[iter=0057] count_correct_positions: 159.62ms
+[iter=0057] emit_signals: 0.01ms
+[iter=0057] TOTAL_ITERATION: 987.67ms
+
+[iter=0058] topk_get_current_series: 110.00ms
+[iter=0058] topk_batch_dissonance: 214.77ms | n=2000
+[iter=0058] topk_gpu_evaluate_swap_batch: 149.53ms | topk=100,n_candidates=4950
+[iter=0058] find_best_swap: 501.36ms | strategy=top_k_best
+[iter=0058] update_graphs: 276.58ms
+[iter=0058] update_display: 12.67ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.7ms,draw=0.2ms
+[iter=0058] update_display: 12.28ms | frame=7.7ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0058] display_sync_wait: 232.16ms
+[iter=0058] execute_swap: 3.13ms
+[iter=0058] high_diss_total_detail: 51.04ms | series=0.0ms,batch=51.0ms,n=2000
+[iter=0058] compute_high_diss_total: 51.28ms
+[iter=0058] count_correct_positions: 160.61ms
+[iter=0058] emit_signals: 0.01ms
+[iter=0058] TOTAL_ITERATION: 964.07ms
+
+[iter=0059] topk_get_current_series: 79.01ms
+[iter=0059] topk_batch_dissonance: 221.12ms | n=2000
+[iter=0059] topk_gpu_evaluate_swap_batch: 114.27ms | topk=100,n_candidates=4950
+[iter=0059] find_best_swap: 443.16ms | strategy=top_k_best
+[iter=0059] update_graphs: 287.06ms
+[iter=0059] update_display: 12.33ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0059] update_display: 13.67ms | frame=9.1ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0059] display_sync_wait: 285.83ms
+[iter=0059] execute_swap: 3.15ms
+[iter=0059] high_diss_total_detail: 49.39ms | series=0.0ms,batch=49.4ms,n=2000
+[iter=0059] compute_high_diss_total: 49.64ms
+[iter=0059] count_correct_positions: 169.42ms
+[iter=0059] emit_signals: 0.01ms
+[iter=0059] TOTAL_ITERATION: 952.37ms
+
+[iter=0060] topk_get_current_series: 110.87ms
+[iter=0060] topk_batch_dissonance: 218.46ms | n=2000
+[iter=0060] topk_gpu_evaluate_swap_batch: 127.53ms | topk=100,n_candidates=4950
+[iter=0060] find_best_swap: 482.87ms | strategy=top_k_best
+[iter=0060] update_graphs: 283.61ms
+[iter=0060] update_display: 12.39ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0060] update_display: 12.85ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=3.0ms,draw=0.2ms
+[iter=0060] display_sync_wait: 265.83ms
+[iter=0060] execute_swap: 3.01ms
+[iter=0060] high_diss_total_detail: 49.71ms | series=0.0ms,batch=49.7ms,n=2000
+[iter=0060] compute_high_diss_total: 49.97ms
+[iter=0060] count_correct_positions: 171.71ms
+[iter=0060] emit_signals: 0.01ms
+[iter=0060] TOTAL_ITERATION: 975.11ms
+
+[iter=0061] topk_get_current_series: 101.62ms
+[iter=0061] topk_batch_dissonance: 247.02ms | n=2000
+[iter=0061] topk_gpu_evaluate_swap_batch: 167.31ms | topk=100,n_candidates=4950
+[iter=0061] find_best_swap: 545.49ms | strategy=top_k_best
+[iter=0061] update_graphs: 287.15ms
+[iter=0061] update_display: 12.55ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0061] update_display: 12.50ms | frame=7.7ms,mode=0.0ms,resize=1.7ms,convert=2.5ms,draw=0.2ms
+[iter=0061] display_sync_wait: 213.25ms
+[iter=0061] execute_swap: 3.25ms
+[iter=0061] high_diss_total_detail: 57.65ms | series=0.0ms,batch=57.7ms,n=2000
+[iter=0061] compute_high_diss_total: 57.90ms
+[iter=0061] count_correct_positions: 165.06ms
+[iter=0061] emit_signals: 0.01ms
+[iter=0061] TOTAL_ITERATION: 991.01ms
+
+[iter=0062] topk_get_current_series: 111.07ms
+[iter=0062] topk_batch_dissonance: 226.59ms | n=2000
+[iter=0062] topk_gpu_evaluate_swap_batch: 125.17ms | topk=100,n_candidates=4950
+[iter=0062] find_best_swap: 504.97ms | strategy=top_k_best
+[iter=0062] update_graphs: 286.33ms
+[iter=0062] update_display: 12.58ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0062] update_display: 12.83ms | frame=7.8ms,mode=0.0ms,resize=1.9ms,convert=2.5ms,draw=0.2ms
+[iter=0062] display_sync_wait: 233.19ms
+[iter=0062] execute_swap: 2.96ms
+[iter=0062] high_diss_total_detail: 51.42ms | series=0.0ms,batch=51.4ms,n=2000
+[iter=0062] compute_high_diss_total: 51.67ms
+[iter=0062] count_correct_positions: 162.37ms
+[iter=0062] emit_signals: 0.01ms
+[iter=0062] TOTAL_ITERATION: 975.04ms
+
+[iter=0063] topk_get_current_series: 110.93ms
+[iter=0063] topk_batch_dissonance: 213.50ms | n=2000
+[iter=0063] topk_gpu_evaluate_swap_batch: 196.67ms | topk=100,n_candidates=4950
+[iter=0063] find_best_swap: 554.91ms | strategy=top_k_best
+[iter=0063] update_graphs: 386.71ms
+[iter=0063] update_display: 12.88ms | frame=8.2ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0063] update_display: 13.07ms | frame=7.9ms,mode=0.0ms,resize=1.9ms,convert=2.8ms,draw=0.2ms
+[iter=0063] display_sync_wait: 310.12ms
+[iter=0063] execute_swap: 3.20ms
+[iter=0063] high_diss_total_detail: 49.64ms | series=0.0ms,batch=49.6ms,n=2000
+[iter=0063] compute_high_diss_total: 49.91ms
+[iter=0063] count_correct_positions: 172.65ms
+[iter=0063] emit_signals: 0.02ms
+[iter=0063] TOTAL_ITERATION: 1109.93ms
+
+[iter=0064] topk_get_current_series: 111.95ms
+[iter=0064] topk_batch_dissonance: 208.22ms | n=2000
+[iter=0064] topk_gpu_evaluate_swap_batch: 175.52ms | topk=100,n_candidates=4950
+[iter=0064] find_best_swap: 518.78ms | strategy=top_k_best
+[iter=0064] update_graphs: 308.78ms
+[iter=0064] update_display: 13.01ms | frame=8.1ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0064] update_display: 12.70ms | frame=8.0ms,mode=0.0ms,resize=1.7ms,convert=2.5ms,draw=0.2ms
+[iter=0064] display_sync_wait: 226.32ms
+[iter=0064] execute_swap: 3.15ms
+[iter=0064] high_diss_total_detail: 54.34ms | series=0.0ms,batch=54.3ms,n=2000
+[iter=0064] compute_high_diss_total: 54.60ms
+[iter=0064] count_correct_positions: 160.61ms
+[iter=0064] emit_signals: 0.01ms
+[iter=0064] TOTAL_ITERATION: 972.17ms
+
+[iter=0065] topk_get_current_series: 94.97ms
+[iter=0065] topk_batch_dissonance: 216.29ms | n=2000
+[iter=0065] topk_gpu_evaluate_swap_batch: 133.49ms | topk=100,n_candidates=4950
+[iter=0065] find_best_swap: 469.51ms | strategy=top_k_best
+[iter=0065] update_graphs: 279.54ms
+[iter=0065] update_display: 12.82ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.8ms,draw=0.2ms
+[iter=0065] update_display: 12.43ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.5ms,draw=0.2ms
+[iter=0065] display_sync_wait: 277.21ms
+[iter=0065] execute_swap: 3.22ms
+[iter=0065] high_diss_total_detail: 50.37ms | series=0.0ms,batch=50.4ms,n=2000
+[iter=0065] compute_high_diss_total: 50.62ms
+[iter=0065] count_correct_positions: 176.88ms
+[iter=0065] emit_signals: 0.01ms
+[iter=0065] TOTAL_ITERATION: 985.91ms
+
+[iter=0066] topk_get_current_series: 95.89ms
+[iter=0066] topk_batch_dissonance: 269.10ms | n=2000
+[iter=0066] update_graphs: 279.02ms
+[iter=0066] topk_gpu_evaluate_swap_batch: 173.40ms | topk=100,n_candidates=4950
+[iter=0066] find_best_swap: 559.24ms | strategy=top_k_best
+[iter=0066] update_display: 13.01ms | frame=8.1ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0066] update_display: 12.94ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.9ms,draw=0.2ms
+[iter=0066] display_sync_wait: 185.04ms
+[iter=0066] execute_swap: 3.44ms
+[iter=0066] high_diss_total_detail: 59.33ms | series=0.0ms,batch=59.3ms,n=2000
+[iter=0066] compute_high_diss_total: 59.58ms
+[iter=0066] count_correct_positions: 163.02ms
+[iter=0066] emit_signals: 0.01ms
+[iter=0066] TOTAL_ITERATION: 971.06ms
+
+[iter=0067] topk_get_current_series: 95.00ms
+[iter=0067] topk_batch_dissonance: 238.22ms | n=2000
+[iter=0067] topk_gpu_evaluate_swap_batch: 184.04ms | topk=100,n_candidates=4950
+[iter=0067] find_best_swap: 538.27ms | strategy=top_k_best
+[iter=0067] update_graphs: 286.98ms
+[iter=0067] update_display: 12.85ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=3.0ms,draw=0.2ms
+[iter=0067] update_display: 12.70ms | frame=8.0ms,mode=0.0ms,resize=1.7ms,convert=2.5ms,draw=0.2ms
+[iter=0067] display_sync_wait: 233.46ms
+[iter=0067] execute_swap: 3.68ms
+[iter=0067] high_diss_total_detail: 52.51ms | series=0.0ms,batch=52.5ms,n=2000
+[iter=0067] compute_high_diss_total: 52.78ms
+[iter=0067] count_correct_positions: 165.61ms
+[iter=0067] emit_signals: 0.01ms
+[iter=0067] TOTAL_ITERATION: 996.65ms
+
+[iter=0068] topk_get_current_series: 96.05ms
+[iter=0068] topk_batch_dissonance: 228.03ms | n=2000
+[iter=0068] topk_gpu_evaluate_swap_batch: 171.80ms | topk=100,n_candidates=4950
+[iter=0068] find_best_swap: 523.31ms | strategy=top_k_best
+[iter=0068] update_graphs: 282.80ms
+[iter=0068] update_display: 12.81ms | frame=7.9ms,mode=0.0ms,resize=1.5ms,convert=2.8ms,draw=0.2ms
+[iter=0068] update_display: 12.35ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0068] display_sync_wait: 239.07ms
+[iter=0068] execute_swap: 3.41ms
+[iter=0068] high_diss_total_detail: 58.63ms | series=0.0ms,batch=58.6ms,n=2000
+[iter=0068] compute_high_diss_total: 58.88ms
+[iter=0068] count_correct_positions: 167.67ms
+[iter=0068] emit_signals: 0.01ms
+[iter=0068] TOTAL_ITERATION: 993.58ms
+
+[iter=0069] topk_get_current_series: 112.01ms
+[iter=0069] topk_batch_dissonance: 207.84ms | n=2000
+[iter=0069] topk_gpu_evaluate_swap_batch: 131.48ms | topk=100,n_candidates=4950
+[iter=0069] find_best_swap: 539.21ms | strategy=top_k_best
+[iter=0069] update_graphs: 331.75ms
+[iter=0069] update_display: 12.56ms | frame=8.0ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0069] update_display: 13.86ms | frame=8.1ms,mode=0.0ms,resize=2.4ms,convert=2.8ms,draw=0.2ms
+[iter=0069] display_sync_wait: 256.89ms
+[iter=0069] execute_swap: 4.05ms
+[iter=0069] high_diss_total_detail: 50.01ms | series=0.0ms,batch=50.0ms,n=2000
+[iter=0069] compute_high_diss_total: 50.25ms
+[iter=0069] count_correct_positions: 163.59ms
+[iter=0069] emit_signals: 0.01ms
+[iter=0069] TOTAL_ITERATION: 1029.64ms
+
+[iter=0070] topk_get_current_series: 112.04ms
+[iter=0070] topk_batch_dissonance: 205.12ms | n=2000
+[iter=0070] topk_gpu_evaluate_swap_batch: 164.41ms | topk=100,n_candidates=4950
+[iter=0070] find_best_swap: 507.55ms | strategy=top_k_best
+[iter=0070] update_graphs: 287.63ms
+[iter=0070] update_display: 12.91ms | frame=7.9ms,mode=0.0ms,resize=1.9ms,convert=2.6ms,draw=0.2ms
+[iter=0070] update_display: 12.68ms | frame=8.0ms,mode=0.0ms,resize=1.5ms,convert=2.6ms,draw=0.2ms
+[iter=0070] display_sync_wait: 220.24ms
+[iter=0070] execute_swap: 2.94ms
+[iter=0070] high_diss_total_detail: 49.84ms | series=0.0ms,batch=49.8ms,n=2000
+[iter=0070] compute_high_diss_total: 50.09ms
+[iter=0070] count_correct_positions: 169.58ms
+[iter=0070] emit_signals: 0.01ms
+[iter=0070] TOTAL_ITERATION: 955.02ms
+
+[iter=0071] topk_get_current_series: 111.97ms
+[iter=0071] topk_batch_dissonance: 223.26ms | n=2000
+[iter=0071] topk_gpu_evaluate_swap_batch: 173.51ms | topk=100,n_candidates=4950
+[iter=0071] find_best_swap: 534.68ms | strategy=top_k_best
+[iter=0071] update_graphs: 279.12ms
+[iter=0071] update_display: 13.05ms | frame=8.0ms,mode=0.0ms,resize=1.6ms,convert=3.0ms,draw=0.2ms
+[iter=0071] update_display: 12.50ms | frame=8.0ms,mode=0.0ms,resize=1.6ms,convert=2.4ms,draw=0.2ms
+[iter=0071] display_sync_wait: 222.23ms
+[iter=0071] execute_swap: 3.62ms
+[iter=0071] high_diss_total_detail: 50.19ms | series=0.0ms,batch=50.2ms,n=2000
+[iter=0071] compute_high_diss_total: 50.43ms
+[iter=0071] count_correct_positions: 161.93ms
+[iter=0071] emit_signals: 0.01ms
+[iter=0071] TOTAL_ITERATION: 973.65ms
+
+[iter=0072] topk_get_current_series: 103.24ms
+[iter=0072] topk_batch_dissonance: 237.99ms | n=2000
+[iter=0072] topk_gpu_evaluate_swap_batch: 182.48ms | topk=100,n_candidates=4950
+[iter=0072] find_best_swap: 550.78ms | strategy=top_k_best
+[iter=0072] update_graphs: 282.75ms
+[iter=0072] update_display: 13.04ms | frame=7.9ms,mode=0.0ms,resize=1.7ms,convert=2.9ms,draw=0.1ms
+[iter=0072] update_display: 12.63ms | frame=7.7ms,mode=0.0ms,resize=1.6ms,convert=2.9ms,draw=0.1ms
+[iter=0072] display_sync_wait: 226.08ms
+[iter=0072] execute_swap: 2.74ms
+[iter=0072] high_diss_total_detail: 49.33ms | series=0.0ms,batch=49.3ms,n=2000
+[iter=0072] compute_high_diss_total: 49.57ms
+[iter=0072] count_correct_positions: 164.36ms
+[iter=0072] emit_signals: 0.01ms
+[iter=0072] TOTAL_ITERATION: 994.52ms
+
+[iter=0073] topk_get_current_series: 95.02ms
+[iter=0073] topk_batch_dissonance: 270.96ms | n=2000
+[iter=0073] update_graphs: 282.71ms
+[iter=0073] topk_gpu_evaluate_swap_batch: 173.06ms | topk=100,n_candidates=4950
+[iter=0073] find_best_swap: 560.56ms | strategy=top_k_best
+[iter=0073] update_display: 14.35ms | frame=9.0ms,mode=0.0ms,resize=1.8ms,convert=2.8ms,draw=0.2ms
+[iter=0073] update_display: 13.84ms | frame=8.0ms,mode=0.0ms,resize=1.6ms,convert=3.7ms,draw=0.2ms
+[iter=0073] display_sync_wait: 210.84ms
+[iter=0073] execute_swap: 3.97ms
+[iter=0073] high_diss_total_detail: 64.76ms | series=0.0ms,batch=64.8ms,n=2000
+[iter=0073] compute_high_diss_total: 65.02ms
+[iter=0073] count_correct_positions: 180.45ms
+[iter=0073] emit_signals: 0.01ms
+[iter=0073] TOTAL_ITERATION: 1022.05ms
+
+[iter=0074] topk_get_current_series: 86.48ms
+[iter=0074] topk_batch_dissonance: 257.29ms | n=2000
+[iter=0074] topk_gpu_evaluate_swap_batch: 140.47ms | topk=100,n_candidates=4950
+[iter=0074] find_best_swap: 521.48ms | strategy=top_k_best
+[iter=0074] update_graphs: 295.49ms
+[iter=0074] update_display: 12.37ms | frame=7.9ms,mode=0.0ms,resize=1.6ms,convert=2.4ms,draw=0.2ms
+[iter=0074] update_display: 12.67ms | frame=8.0ms,mode=0.0ms,resize=1.6ms,convert=2.5ms,draw=0.2ms
+[iter=0074] display_sync_wait: 263.72ms
+[iter=0074] execute_swap: 3.75ms
+[iter=0074] high_diss_total_detail: 50.57ms | series=0.0ms,batch=50.6ms,n=2000
+[iter=0074] compute_high_diss_total: 50.82ms
+[iter=0074] count_correct_positions: 162.39ms
+[iter=0074] emit_signals: 0.01ms
+[iter=0074] TOTAL_ITERATION: 1005.01ms
+
+[iter=0075] topk_get_current_series: 95.90ms
+[iter=0075] topk_batch_dissonance: 282.50ms | n=2000
+[iter=0075] topk_gpu_evaluate_swap_batch: 180.40ms | topk=100,n_candidates=4950
+[iter=0075] find_best_swap: 579.32ms | strategy=top_k_best
+[iter=0075] update_graphs: 326.66ms
+[iter=0075] update_display: 13.89ms | frame=8.8ms,mode=0.0ms,resize=1.9ms,convert=2.6ms,draw=0.2ms
+[iter=0075] update_display: 12.95ms | frame=7.8ms,mode=0.0ms,resize=1.5ms,convert=3.1ms,draw=0.2ms
+[iter=0075] display_sync_wait: 220.82ms
+[iter=0075] execute_swap: 3.43ms
+[iter=0075] compute_high_diss_total: 57.97ms
+[iter=0075] count_correct_positions: 162.36ms
+[iter=0075] emit_signals: 0.01ms
+[iter=0075] TOTAL_ITERATION: 1025.77ms
+
+
+#======================================================================
+# SUMMARY STATISTICS
+#======================================================================
+# compute_high_diss_total:
+#   count: 76
+#   total: 4167.3ms
+#   mean:  54.83ms
+#   std:   8.57ms
+#   min:   48.93ms
+#   max:   99.37ms
+#   p50:   51.61ms
+#   p95:   69.87ms
+
+# compute_initial_dissonance:
+#   count: 1
+#   total: 37.0ms
+#   mean:  37.02ms
+#   std:   0.00ms
+#   min:   37.02ms
+#   max:   37.02ms
+#   p50:   37.02ms
+#   p95:   37.02ms
+
+# count_correct_positions:
+#   count: 76
+#   total: 12755.1ms
+#   mean:  167.83ms
+#   std:   5.53ms
+#   min:   159.62ms
+#   max:   185.12ms
+#   p50:   167.18ms
+#   p95:   179.15ms
+
+# display_sync_wait:
+#   count: 76
+#   total: 19209.0ms
+#   mean:  252.75ms
+#   std:   54.11ms
+#   min:   13.93ms
+#   max:   478.18ms
+#   p50:   238.53ms
+#   p95:   317.30ms
+
+# emit_signals:
+#   count: 76
+#   total: 0.9ms
+#   mean:  0.01ms
+#   std:   0.00ms
+#   min:   0.01ms
+#   max:   0.03ms
+#   p50:   0.01ms
+#   p95:   0.02ms
+
+# execute_swap:
+#   count: 76
+#   total: 252.4ms
+#   mean:  3.32ms
+#   std:   0.30ms
+#   min:   2.74ms
+#   max:   4.18ms
+#   p50:   3.26ms
+#   p95:   3.95ms
+
+# find_best_swap:
+#   count: 76
+#   total: 37809.8ms
+#   mean:  497.50ms
+#   std:   62.91ms
+#   min:   116.58ms
+#   max:   586.16ms
+#   p50:   511.67ms
+#   p95:   564.65ms
+
+# gpu_memory_cleanup:
+#   count: 1
+#   total: 171.9ms
+#   mean:  171.86ms
+#   std:   0.00ms
+#   min:   171.86ms
+#   max:   171.86ms
+#   p50:   171.86ms
+#   p95:   171.86ms
+
+# high_diss_total_detail:
+#   count: 76
+#   total: 4126.4ms
+#   mean:  54.29ms
+#   std:   8.80ms
+#   min:   36.72ms
+#   max:   99.12ms
+#   p50:   51.26ms
+#   p95:   69.56ms
+
+# topk_batch_dissonance:
+#   count: 76
+#   total: 16552.4ms
+#   mean:  217.80ms
+#   std:   37.33ms
+#   min:   48.47ms
+#   max:   301.76ms
+#   p50:   216.97ms
+#   p95:   269.56ms
+
+# topk_get_current_series:
+#   count: 76
+#   total: 7588.6ms
+#   mean:  99.85ms
+#   std:   18.07ms
+#   min:   2.09ms
+#   max:   115.66ms
+#   p50:   109.88ms
+#   p95:   112.02ms
+
+# topk_gpu_evaluate_swap_batch:
+#   count: 76
+#   total: 11631.7ms
+#   mean:  153.05ms
+#   std:   35.74ms
+#   min:   61.92ms
+#   max:   257.95ms
+#   p50:   160.81ms
+#   p95:   211.46ms
+
+# update_display:
+#   count: 151
+#   total: 1951.6ms
+#   mean:  12.92ms
+#   std:   0.58ms
+#   min:   12.21ms
+#   max:   15.79ms
+#   p50:   12.77ms
+#   p95:   14.21ms
+
+# update_graphs:
+#   count: 75
+#   total: 22177.8ms
+#   mean:  295.70ms
+#   std:   28.20ms
+#   min:   261.61ms
+#   max:   422.43ms
+#   p50:   287.06ms
+#   p95:   347.36ms
+
+# Log file: solver_timing_20260203_034823.log
