@@ -14,7 +14,8 @@
       "Bash(dir:*)",
       "Bash(wc:*)",
       "Bash(nvidia-smi:*)",
-      "Bash(nvcc:*)"
+      "Bash(nvcc:*)",
+      "Bash(start \"\" \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\\\\discord_post.md\")"
     ]
   }
 }

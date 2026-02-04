@@ -495,7 +495,7 @@ class GreedySolverGUI(QMainWindow):
         params = [
             ("Frames:", "frames_edit", "50"),
             ("Stride:", "stride_edit", "100"),
-            ("Crop % (1-100):", "crop_edit", "50"),
+            ("Crop % (1-100):", "crop_edit", "100"),
             ("DTW Window (0-1):", "window_edit", "0.1"),
             ("Kernel Size (odd):", "kernel_edit", "3"),
         ]
@@ -551,7 +551,7 @@ class GreedySolverGUI(QMainWindow):
         swap_label = QLabel("Num swaps:")
         swap_label.setFixedWidth(80)
         swap_row.addWidget(swap_label)
-        self.num_swaps_edit = QLineEdit("10000")
+        self.num_swaps_edit = QLineEdit("1000")
         self.num_swaps_edit.setFixedWidth(70)
         swap_row.addWidget(self.num_swaps_edit)
         swap_row.addStretch()
@@ -612,7 +612,7 @@ class GreedySolverGUI(QMainWindow):
         strat_label.setFixedWidth(70)
         strat_row.addWidget(strat_label)
         self.strategy_combo = QComboBox()
-        self.strategy_combo.addItems(["greedy", "top_k_best", "simulated_annealing"])
+        self.strategy_combo.addItems(["top_k_best", "greedy", "simulated_annealing"])
         self.strategy_combo.setFixedWidth(160)
         strat_row.addWidget(self.strategy_combo)
         strat_row.addStretch()
@@ -651,7 +651,7 @@ class GreedySolverGUI(QMainWindow):
         iter_label = QLabel("Max iters:")
         iter_label.setFixedWidth(70)
         iter_row.addWidget(iter_label)
-        self.max_iters_edit = QLineEdit("1000")
+        self.max_iters_edit = QLineEdit("10000")
         self.max_iters_edit.setFixedWidth(70)
         iter_row.addWidget(self.max_iters_edit)
         iter_row.addStretch()
