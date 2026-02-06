@@ -39,27 +39,32 @@ The unscramble problem is analogous: we're trying to recover spatial topology fr
 unscramble_video/
 ├── tv_wall.py                         # TVWall class - core abstraction
 ├── gpu_utils.py                       # GPU acceleration utilities (CuPy)
-├── neighbor_dissonance_gui.py         # Interactive dissonance visualization
 ├── greedy_solver_gui_pyqt.py          # Interactive solver (PyQt5, cute pink theme)
+├── neighbor_dissonance_gui.py         # Interactive dissonance visualization (Tkinter)
+├── animated_shuffle_visual.py         # Animated pixel shuffle visualization tool
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
 ├── benchmark_gpu.py                   # GPU vs CPU performance benchmarking
-├── *.ipynb                            # Experimental notebooks
-├── *.mkv                              # Input video files
-├── *.gif                              # Output animations
-└── *.npy                              # Cached numpy arrays
+├── Kablammo-Regular-VariableFont_MORF.ttf  # Custom font for solver GUI
+├── media_output/                      # Directory for exported media
+├── solver_timing_*.log                # Performance timing logs from solver runs
+├── *.ipynb                            # Experimental notebooks (gitignored)
+├── *.mkv                              # Input video files (gitignored)
+├── *.gif                              # Output animations (gitignored)
+└── *.npy                              # Cached numpy arrays (gitignored)
 ```
 
 ## Commands
 
 ```bash
-# Install dependencies
+# Install dependencies (includes aeon, scikit-learn, cupy-cuda13x)
 pip install -r requirements.txt
-pip install aeon scikit-learn  # Additional deps for experiments
-pip install cupy-cuda12x       # Optional: GPU acceleration (adjust for your CUDA version)
 
 # Run interactive GUIs
-python neighbor_dissonance_gui.py    # Visualize dissonance heatmaps
 python greedy_solver_gui_pyqt.py     # Run solver with animation (PyQt5, pink theme)
+python neighbor_dissonance_gui.py    # Visualize dissonance heatmaps (Tkinter)
+
+# Run animated shuffle visualization
+python animated_shuffle_visual.py -v video.mkv --num-swaps 10 --pixel-scale 8
 
 # Run CLI experiment
 python experiment_neighbor_dissonance.py -v video.mkv -n 20 -f 100
@@ -67,6 +72,8 @@ python experiment_neighbor_dissonance.py -v video.mkv -n 20 -f 100
 # Run GPU benchmark
 python benchmark_gpu.py
 ```
+
+**Note:** `requirements.txt` is gitignored. If you add new dependencies, update both the file and this documentation.
 
 ## Key Concepts
 
@@ -348,11 +355,21 @@ The GPU batched evaluation:
 
 The GUI automatically uses GPU when CuPy is available and the metric is euclidean/squared/manhattan. Falls back to CPU for DTW or when CuPy isn't installed.
 
+### Adaptive Top-K
+
+The Best-of-Top-K strategy automatically doubles the top-K parameter when no improvement is found in an iteration, expanding the search space to escape local minima.
+
+### Performance Logging
+
+The solver GUI includes a `PerformanceLogger` class that writes detailed timing logs to `solver_timing_YYYYMMDD_HHMMSS.log`. Each iteration records timing breakdowns for swap evaluation, dissonance computation, and GPU operations.
+
 ### GUI Features
 
 - **Step button**: Execute one swap iteration with visual feedback
-- **Animation**: Watch positions swap in real-time
-- **Metrics display**: Show total dissonance of the high dissonance positions
+- **Animation**: Watch positions swap in real-time with sequential swap animations
+- **Pulsing red highlights**: Pixels pulse red before swapping to show which positions are being moved
+- **Fancy iteration counter**: Uses the Kablammo custom font for a distinctive display
+- **Metrics display**: Live graphs showing total dissonance, correct count, and accuracy %
 
 ## GUI Tools
 
@@ -372,8 +389,24 @@ Interactive solver with real-time animation (PyQt5 with cute pink theme):
 - Compare strategies: greedy, best-of-top-K, simulated annealing
 - Uses **local dissonance optimization** for fast swap evaluation (only computes dissonance for the two swapped positions)
 - Tune parameters: top-K, max iterations, temperature, cooling rate
-- View progress charts and correctness maps
+- View live progress graphs (dissonance, correct count, accuracy %) and correctness maps
+- Sequential swap animations with pulsing red highlights before each swap
+- Performance timing logs written to `solver_timing_*.log`
 - Cute pink UI theme with rounded corners, gradients, and hover effects
+
+### Animated Shuffle Visual (`animated_shuffle_visual.py`)
+
+Standalone tool for creating animated GIF/video visualizations of pixel shuffling:
+- Upscale pixels for visibility (configurable `pixel_scale`)
+- Pulsing red circle highlights before each swap begins
+- Smooth cubic easing for swap animations
+- Configurable swap duration, highlight duration, and FPS
+- Outputs to GIF or video format
+
+```bash
+python animated_shuffle_visual.py -v video.mkv --num-swaps 10 \
+    --pixel-scale 8 --swap-duration 15 --highlight-frames 20
+```
 
 ## CLI Experiment (`experiment_neighbor_dissonance.py`)
 
@@ -394,6 +427,51 @@ python experiment_neighbor_dissonance.py \
 # - Statistics (separation z-score, top-K recall)
 ```
 
+## GPU Utilities (`gpu_utils.py`)
+
+The `GPUAccelerator` class manages GPU-resident data and parallel operations via CuPy.
+
+### Key Methods
+
+```python
+from gpu_utils import GPUAccelerator, check_gpu
+
+# Check GPU availability
+check_gpu()
+
+# Initialize accelerator
+gpu = GPUAccelerator(use_gpu=True)
+
+# Cache data on GPU (minimizes host-device transfers)
+gpu.cache_frames(frames)
+gpu.cache_permutation(perm_x, perm_y)
+
+# Compute dissonance map - single GPU operation for all positions
+dmap = gpu.compute_dissonance_map_gpu(all_series, kernel_size=3,
+                                       distance_metric='euclidean')
+
+# Batch evaluate all swap candidates in parallel
+# Returns list of (pos_a, pos_b, improvement) sorted by improvement
+results = gpu.evaluate_swap_batch(swap_candidates, all_series,
+                                   get_neighbors_func, kernel_size=3,
+                                   distance_metric='euclidean')
+
+# Memory management
+gpu.invalidate_series_cache()  # After swaps change permutation
+gpu.cleanup_memory()           # Free GPU memory pools
+gpu.free_memory()              # Clear all cached GPU data
+```
+
+### Helper Functions
+
+```python
+from gpu_utils import to_gpu, to_cpu, is_gpu_array, get_array_module
+
+arr_gpu = to_gpu(numpy_array)       # Transfer to GPU
+arr_cpu = to_cpu(cupy_array)        # Transfer to CPU
+xp = get_array_module(use_gpu=True) # Get cupy or numpy
+```
+
 ## Coding Conventions
 
 - Lowercase with underscores for functions/variables
@@ -406,6 +484,7 @@ python experiment_neighbor_dissonance.py \
 
 - Commit prefixes: `feat:`, `chore:`, `fix:`, `docs:`
 - Keep notebooks and generated media out of git (see .gitignore)
+- `.gitignore` excludes: `*.pyc`, `*.npy`, `*.gif`, `*.png`, `*.mkv`, `*.mp4`, `*.ipynb`, `requirements.txt`, `videos/`, `media/`, `ffmpeg/`, and several legacy script names
 
 ## Ideas
 
