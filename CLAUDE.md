@@ -206,7 +206,7 @@ dmap = wall.compute_dissonance_map(all_series, kernel_size=3,
                                     distance_metric='dtw', window=0.1)
 
 # Compute dissonance map using GPU (CuPy) - ~27x faster for large images
-# Supports: 'euclidean', 'squared', 'manhattan'
+# Supports: 'euclidean', 'squared', 'manhattan', 'cosine'
 dmap = wall.compute_dissonance_map_gpu(all_series, kernel_size=3,
                                         distance_metric='euclidean')
 
@@ -316,7 +316,7 @@ The solver uses several optimizations for fast swap evaluation with high Top-N v
 
 1. **Vectorized series retrieval**: `get_all_series()` uses NumPy advanced indexing instead of Python loops (~100x faster)
 
-2. **Fast distance computation**: For simple metrics (euclidean, manhattan, squared), uses direct NumPy operations instead of aeon library (~500x faster for euclidean)
+2. **Fast distance computation**: For simple metrics (euclidean, manhattan, squared, cosine), uses direct NumPy operations instead of aeon library (~500x faster for euclidean)
 
 3. **Local swap evaluation**: Instead of recomputing the full series array for each tentative swap, swaps values in a local copy of the series array (~900x faster)
 
@@ -346,7 +346,7 @@ The GPU batched evaluation:
 - Correctly accounts for when swapped positions are neighbors of each other
 - Returns results sorted by improvement
 
-The GUI automatically uses GPU when CuPy is available and the metric is euclidean/squared/manhattan. Falls back to CPU for DTW or when CuPy isn't installed.
+The GUI automatically uses GPU when CuPy is available and the metric is euclidean/squared/manhattan/cosine. Falls back to CPU for DTW or when CuPy isn't installed.
 
 ### GUI Features
 

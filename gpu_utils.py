@@ -207,6 +207,20 @@ class GPUAccelerator:
         distances = xp.sum(xp.abs(diff), axis=(1, 2))
         return distances
 
+    def compute_cosine_distances(self, center_series, neighbor_series):
+        """Compute cosine distances: 1 - dot(a,b) / (|a|*|b|)."""
+        xp = self.xp
+        # Flatten (3, num_frames) -> (3*num_frames,)
+        center_flat = center_series.reshape(-1)
+        neighbor_flat = neighbor_series.reshape(neighbor_series.shape[0], -1)
+        dots = neighbor_flat @ center_flat
+        center_norm = xp.sqrt(xp.sum(center_flat ** 2))
+        neighbor_norms = xp.sqrt(xp.sum(neighbor_flat ** 2, axis=1))
+        denom = center_norm * neighbor_norms
+        denom = xp.where(denom == 0, xp.float32(1.0), denom)
+        distances = 1.0 - dots / denom
+        return distances
+
     def compute_position_dissonance(self, x, y, all_series, neighbors,
                                      distance_metric='euclidean'):
         """
@@ -245,6 +259,8 @@ class GPUAccelerator:
             distances = self.compute_squared_distances(center_series, neighbor_series)
         elif distance_metric == 'manhattan':
             distances = self.compute_manhattan_distances(center_series, neighbor_series)
+        elif distance_metric == 'cosine':
+            distances = self.compute_cosine_distances(center_series, neighbor_series)
         else:
             raise ValueError(f"GPU acceleration not supported for metric: {distance_metric}")
 
@@ -324,6 +340,16 @@ class GPUAccelerator:
             distances = xp.sum(diff ** 2, axis=(2, 3))
         elif distance_metric == 'manhattan':
             distances = xp.sum(xp.abs(diff), axis=(2, 3))
+        elif distance_metric == 'cosine':
+            # Flatten channels+frames: (n_offsets, n_positions, C*F)
+            center_flat = center_series.reshape(n_positions, -1)  # (n_positions, C*F)
+            neighbor_flat = neighbor_series.reshape(n_offsets, n_positions, -1)
+            dots = xp.sum(center_flat[None, :, :] * neighbor_flat, axis=2)
+            center_norms = xp.sqrt(xp.sum(center_flat ** 2, axis=1))  # (n_positions,)
+            neighbor_norms = xp.sqrt(xp.sum(neighbor_flat ** 2, axis=2))  # (n_offsets, n_positions)
+            denom = center_norms[None, :] * neighbor_norms
+            denom = xp.where(denom == 0, xp.float32(1.0), denom)
+            distances = 1.0 - dots / denom
         else:
             raise ValueError(f"Unsupported metric for GPU: {distance_metric}")
 
@@ -417,6 +443,15 @@ class GPUAccelerator:
                     dist = xp.sum(diff ** 2, axis=(2, 3))
                 elif distance_metric == 'manhattan':
                     dist = xp.sum(xp.abs(diff), axis=(2, 3))
+                elif distance_metric == 'cosine':
+                    center_flat = center.reshape(center.shape[0], center.shape[1], -1)
+                    neighbor_flat = neighbor.reshape(neighbor.shape[0], neighbor.shape[1], -1)
+                    dots = xp.sum(center_flat * neighbor_flat, axis=2)
+                    center_norms = xp.sqrt(xp.sum(center_flat ** 2, axis=2))
+                    neighbor_norms = xp.sqrt(xp.sum(neighbor_flat ** 2, axis=2))
+                    denom = center_norms * neighbor_norms
+                    denom = xp.where(denom == 0, xp.float32(1.0), denom)
+                    dist = 1.0 - dots / denom
                 else:
                     raise ValueError(f"Unsupported metric for GPU: {distance_metric}")
 
@@ -587,6 +622,26 @@ class GPUAccelerator:
         elif distance_metric == 'manhattan':
             dist1_before = xp.sum(xp.abs(diff1_before), axis=(2, 3))
             dist2_before = xp.sum(xp.abs(diff2_before), axis=(2, 3))
+        elif distance_metric == 'cosine':
+            # series1/2: (n_swaps, 3, num_frames), neighbors: (n_offsets, n_swaps, 3, num_frames)
+            s1_flat = series1.reshape(n_swaps, -1)  # (n_swaps, C*F)
+            s2_flat = series2.reshape(n_swaps, -1)
+            n1_flat = pos1_neighbor_series.reshape(n_offsets, n_swaps, -1)
+            n2_flat = pos2_neighbor_series.reshape(n_offsets, n_swaps, -1)
+            # pos1 before: series1 vs its neighbors
+            dots1 = xp.sum(s1_flat[None, :, :] * n1_flat, axis=2)
+            norms_s1 = xp.sqrt(xp.sum(s1_flat ** 2, axis=1))  # (n_swaps,)
+            norms_n1 = xp.sqrt(xp.sum(n1_flat ** 2, axis=2))  # (n_offsets, n_swaps)
+            denom1 = norms_s1[None, :] * norms_n1
+            denom1 = xp.where(denom1 == 0, xp.float32(1.0), denom1)
+            dist1_before = 1.0 - dots1 / denom1
+            # pos2 before: series2 vs its neighbors
+            dots2 = xp.sum(s2_flat[None, :, :] * n2_flat, axis=2)
+            norms_s2 = xp.sqrt(xp.sum(s2_flat ** 2, axis=1))
+            norms_n2 = xp.sqrt(xp.sum(n2_flat ** 2, axis=2))
+            denom2 = norms_s2[None, :] * norms_n2
+            denom2 = xp.where(denom2 == 0, xp.float32(1.0), denom2)
+            dist2_before = 1.0 - dots2 / denom2
         else:
             raise ValueError(f"Unsupported metric: {distance_metric}")
 
@@ -640,6 +695,25 @@ class GPUAccelerator:
         elif distance_metric == 'manhattan':
             dist1_after = xp.sum(xp.abs(diff1_after), axis=(2, 3))
             dist2_after = xp.sum(xp.abs(diff2_after), axis=(2, 3))
+        elif distance_metric == 'cosine':
+            s2_flat = series2.reshape(n_swaps, -1)
+            s1_flat = series1.reshape(n_swaps, -1)
+            n1a_flat = pos1_neighbor_series_after.reshape(n_offsets, n_swaps, -1)
+            n2a_flat = pos2_neighbor_series_after.reshape(n_offsets, n_swaps, -1)
+            # pos1 after: series2 (now at pos1) vs updated neighbors
+            dots1a = xp.sum(s2_flat[None, :, :] * n1a_flat, axis=2)
+            norms_s2 = xp.sqrt(xp.sum(s2_flat ** 2, axis=1))
+            norms_n1a = xp.sqrt(xp.sum(n1a_flat ** 2, axis=2))
+            denom1a = norms_s2[None, :] * norms_n1a
+            denom1a = xp.where(denom1a == 0, xp.float32(1.0), denom1a)
+            dist1_after = 1.0 - dots1a / denom1a
+            # pos2 after: series1 (now at pos2) vs updated neighbors
+            dots2a = xp.sum(s1_flat[None, :, :] * n2a_flat, axis=2)
+            norms_s1 = xp.sqrt(xp.sum(s1_flat ** 2, axis=1))
+            norms_n2a = xp.sqrt(xp.sum(n2a_flat ** 2, axis=2))
+            denom2a = norms_s1[None, :] * norms_n2a
+            denom2a = xp.where(denom2a == 0, xp.float32(1.0), denom2a)
+            dist2_after = 1.0 - dots2a / denom2a
 
         # Mask invalid and compute mean
         dist1_after = xp.where(pos1_valid, dist1_after, 0.0)

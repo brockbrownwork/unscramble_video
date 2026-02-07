@@ -1063,7 +1063,7 @@ class GreedySolverGUI(QMainWindow):
             height, width = self.wall.height, self.wall.width
 
             # Try GPU-accelerated computation for supported metrics
-            use_gpu = CUPY_AVAILABLE and metric in ('euclidean', 'squared', 'manhattan')
+            use_gpu = CUPY_AVAILABLE and metric in ('euclidean', 'squared', 'manhattan', 'cosine')
 
             if use_gpu:
                 self.signals.set_status.emit("Computing dissonance map (GPU)...")
@@ -1401,7 +1401,7 @@ class GreedySolverGUI(QMainWindow):
         # Check if we can use GPU-accelerated batch evaluation
         use_gpu_batch = (CUPY_AVAILABLE and
                          self.wall._gpu is not None and
-                         metric in ('euclidean', 'squared', 'manhattan'))
+                         metric in ('euclidean', 'squared', 'manhattan', 'cosine'))
 
         # Build swap candidates: best_pos with every other position
         swap_candidates = [(best_pos, other_pos)
@@ -1480,7 +1480,7 @@ class GreedySolverGUI(QMainWindow):
         # Check if we can use GPU-accelerated batch evaluation
         use_gpu_batch = (CUPY_AVAILABLE and
                          self.wall._gpu is not None and
-                         metric in ('euclidean', 'squared', 'manhattan'))
+                         metric in ('euclidean', 'squared', 'manhattan', 'cosine'))
 
         # Double top-k until we find improvement or exceed 1000
         current_topk = topk

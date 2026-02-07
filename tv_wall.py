@@ -583,7 +583,7 @@ class TVWall:
             all_series = self.get_all_series()
 
         # Use GPU acceleration for simple metrics if available
-        if self._gpu is not None and distance_metric in ('euclidean', 'squared', 'manhattan'):
+        if self._gpu is not None and distance_metric in ('euclidean', 'squared', 'manhattan', 'cosine'):
             return self._gpu.compute_position_dissonance(
                 x, y, all_series, neighbors, distance_metric
             )
@@ -691,7 +691,7 @@ class TVWall:
             all_series = self.get_all_series()
 
         # For GPU-accelerated simple metrics, use fully vectorized map computation
-        if self._gpu is not None and distance_metric in ('euclidean', 'squared', 'manhattan'):
+        if self._gpu is not None and distance_metric in ('euclidean', 'squared', 'manhattan', 'cosine'):
             return self._gpu.compute_dissonance_map_gpu(
                 all_series, kernel_size, distance_metric
             )
@@ -806,7 +806,7 @@ class TVWall:
             return {}
 
         # Use GPU acceleration for simple metrics if available
-        if self._gpu is not None and distance_metric in ('euclidean', 'squared', 'manhattan'):
+        if self._gpu is not None and distance_metric in ('euclidean', 'squared', 'manhattan', 'cosine'):
             return self._gpu.compute_batch_dissonance_gpu(
                 positions, all_series, self.get_neighbors,
                 kernel_size, distance_metric
