@@ -184,14 +184,18 @@ def main():
 
     # Plot: row 1 = heatmaps, row 2 = histograms
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    fig.suptitle(f'Metric Comparison — {args.num_swaps} swaps, {args.frames} frames, stride {args.stride}',
+    fig.suptitle(f'Neighbor Dissonance Metric Comparison — {args.num_swaps} swaps, {args.frames} frames, stride {args.stride}',
                  fontsize=14, fontweight='bold')
+    fig.text(0.5, 0.935,
+             'Overlap zone: dissonance range where both correct and shuffled positions coexist — '
+             'dissonance alone cannot distinguish them here.',
+             ha='center', fontsize=9, fontstyle='italic', color='#555555')
 
     for col, (name, dmap) in enumerate(metrics.items()):
         # Row 1: heatmap
         ax_heat = axes[0, col]
         im = ax_heat.imshow(dmap, cmap='hot', interpolation='nearest')
-        ax_heat.set_title(f'{name}\nmean={dmap.mean():.2f}', fontsize=11)
+        ax_heat.set_title(f'{name} Neighbor Dissonance\nmean={dmap.mean():.2f}', fontsize=11)
         ax_heat.axis('off')
         plt.colorbar(im, ax=ax_heat, fraction=0.046, pad=0.04)
 
@@ -245,10 +249,10 @@ def main():
 
         ax_hist.set_xlabel('Dissonance')
         ax_hist.set_ylabel('Density')
-        ax_hist.set_title(f'{name} — Distribution', fontsize=11)
+        ax_hist.set_title(f'{name} Neighbor Dissonance — Distribution', fontsize=11)
         ax_hist.legend(fontsize=9)
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.93])
 
     if args.output:
         plt.savefig(args.output, dpi=150)
