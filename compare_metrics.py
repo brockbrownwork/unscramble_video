@@ -14,7 +14,7 @@ Usage:
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import skewnorm
+from scipy.stats import norm, skewnorm
 
 from tv_wall import TVWall
 
@@ -33,6 +33,8 @@ def parse_args():
                         help='Random seed (default: 42)')
     parser.add_argument('-o', '--output', type=str, default=None,
                         help='Save figure to file (default: show interactively)')
+    parser.add_argument('--skew-normal', action=argparse.BooleanOptionalAction, default=True,
+                        help='Use skew-normal distribution fit (default: True). Use --no-skew-normal for Gaussian.')
     return parser.parse_args()
 
 
@@ -161,12 +163,20 @@ def main():
         sep = (shuffled_vals.mean() - correct_vals.mean()) / np.sqrt(
             (shuffled_vals.std()**2 + correct_vals.std()**2) / 2) if correct_vals.std() > 0 else float('inf')
         print(f"  {name}:")
-        a_s_con, mu_s_con, std_s_con = skewnorm.fit(shuffled_vals)
-        a_c_con, mu_c_con, std_c_con = skewnorm.fit(correct_vals)
         print(f"    Shuffled  (n={len(shuffled_vals):5d}): mean={shuffled_vals.mean():.4f}  std={shuffled_vals.std():.4f}")
-        print(f"      Skew-normal fit: α={a_s_con:.4f}, ξ={mu_s_con:.4f}, ω={std_s_con:.4f}")
+        if args.skew_normal:
+            a_s_con, mu_s_con, std_s_con = skewnorm.fit(shuffled_vals)
+            print(f"      Skew-normal fit: α={a_s_con:.4f}, ξ={mu_s_con:.4f}, ω={std_s_con:.4f}")
+        else:
+            mu_s_con, std_s_con = norm.fit(shuffled_vals)
+            print(f"      Gaussian fit: μ={mu_s_con:.4f}, σ={std_s_con:.4f}")
         print(f"    Correct   (n={len(correct_vals):5d}): mean={correct_vals.mean():.4f}  std={correct_vals.std():.4f}")
-        print(f"      Skew-normal fit: α={a_c_con:.4f}, ξ={mu_c_con:.4f}, ω={std_c_con:.4f}")
+        if args.skew_normal:
+            a_c_con, mu_c_con, std_c_con = skewnorm.fit(correct_vals)
+            print(f"      Skew-normal fit: α={a_c_con:.4f}, ξ={mu_c_con:.4f}, ω={std_c_con:.4f}")
+        else:
+            mu_c_con, std_c_con = norm.fit(correct_vals)
+            print(f"      Gaussian fit: μ={mu_c_con:.4f}, σ={std_c_con:.4f}")
         print(f"    Separation (Cohen's d): {sep:.2f}")
 
         # Overlap analysis
@@ -224,16 +234,23 @@ def main():
         ax_hist.axvline(correct_vals.mean(), color='steelblue', linestyle='--', linewidth=1.5)
         ax_hist.axvline(shuffled_vals.mean(), color='tomato', linestyle='--', linewidth=1.5)
 
-        # Fit and draw skew-normal curves
+        # Fit and draw distribution curves
         x_fit = np.linspace(dmap.min(), dmap.max(), 300)
 
-        a_s, mu_s, std_s = skewnorm.fit(shuffled_vals)
-        ax_hist.plot(x_fit, skewnorm.pdf(x_fit, a_s, mu_s, std_s), color='darkred', linewidth=2,
-                     linestyle='-', label=f'Shuffled fit (α={a_s:.2f}, ξ={mu_s:.2f}, ω={std_s:.2f})')
-
-        a_c, mu_c, std_c = skewnorm.fit(correct_vals)
-        ax_hist.plot(x_fit, skewnorm.pdf(x_fit, a_c, mu_c, std_c), color='darkblue', linewidth=2,
-                     linestyle='-', label=f'Correct fit (α={a_c:.2f}, ξ={mu_c:.2f}, ω={std_c:.2f})')
+        if args.skew_normal:
+            a_s, mu_s, std_s = skewnorm.fit(shuffled_vals)
+            ax_hist.plot(x_fit, skewnorm.pdf(x_fit, a_s, mu_s, std_s), color='darkred', linewidth=2,
+                         linestyle='-', label=f'Shuffled fit (α={a_s:.2f}, ξ={mu_s:.2f}, ω={std_s:.2f})')
+            a_c, mu_c, std_c = skewnorm.fit(correct_vals)
+            ax_hist.plot(x_fit, skewnorm.pdf(x_fit, a_c, mu_c, std_c), color='darkblue', linewidth=2,
+                         linestyle='-', label=f'Correct fit (α={a_c:.2f}, ξ={mu_c:.2f}, ω={std_c:.2f})')
+        else:
+            mu_s, std_s = norm.fit(shuffled_vals)
+            ax_hist.plot(x_fit, norm.pdf(x_fit, mu_s, std_s), color='darkred', linewidth=2,
+                         linestyle='-', label=f'Shuffled fit (μ={mu_s:.2f}, σ={std_s:.2f})')
+            mu_c, std_c = norm.fit(correct_vals)
+            ax_hist.plot(x_fit, norm.pdf(x_fit, mu_c, std_c), color='darkblue', linewidth=2,
+                         linestyle='-', label=f'Correct fit (μ={mu_c:.2f}, σ={std_c:.2f})')
 
         # Compute overlap: bins where both distributions have counts
         correct_counts, _ = np.histogram(correct_vals, bins=bins)
