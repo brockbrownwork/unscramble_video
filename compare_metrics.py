@@ -175,7 +175,10 @@ def main():
         pct_shuffled_in = 100.0 * n_shuffled_in / len(shuffled_vals) if len(shuffled_vals) > 0 else 0
         print(f"    Correct positions in overlap zone: {n_correct_in} ({pct_correct_in:.1f}%)")
         print(f"    Shuffled positions in overlap zone: {n_shuffled_in} ({pct_shuffled_in:.1f}%)")
-        print(f"    Total positions in overlap zone: {n_correct_in + n_shuffled_in}")
+        total_in = n_correct_in + n_shuffled_in
+        total_pixels = len(correct_vals) + len(shuffled_vals)
+        pct_total_in = 100.0 * total_in / total_pixels if total_pixels > 0 else 0
+        print(f"    Total positions in overlap zone: {total_in}/{total_pixels} ({pct_total_in:.1f}%)")
         print()
     print("=" * 60)
 
@@ -227,13 +230,15 @@ def main():
 
         # Annotate on figure
         total_in_overlap = n_correct_in_overlap + n_shuffled_in_overlap
+        total_pixels = len(correct_vals) + len(shuffled_vals)
         pct_correct = 100.0 * n_correct_in_overlap / len(correct_vals) if len(correct_vals) > 0 else 0
         pct_shuffled = 100.0 * n_shuffled_in_overlap / len(shuffled_vals) if len(shuffled_vals) > 0 else 0
+        pct_total = 100.0 * total_in_overlap / total_pixels if total_pixels > 0 else 0
         ax_hist.text(0.98, 0.95,
                      f'Overlap bins: {n_overlap_bins}/{len(bins)-1}\n'
                      f'Correct in overlap: {n_correct_in_overlap} ({pct_correct:.1f}%)\n'
                      f'Shuffled in overlap: {n_shuffled_in_overlap} ({pct_shuffled:.1f}%)\n'
-                     f'Total in overlap: {total_in_overlap}',
+                     f'Total in overlap: {total_in_overlap}/{total_pixels} ({pct_total:.1f}%)',
                      transform=ax_hist.transAxes, fontsize=8,
                      verticalalignment='top', horizontalalignment='right',
                      bbox=dict(boxstyle='round,pad=0.4', facecolor='#f0e0ff', alpha=0.9))
