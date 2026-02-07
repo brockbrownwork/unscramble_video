@@ -135,25 +135,59 @@ def main():
     metrics['Dot Product (neg)'] = compute_dot_product_dissonance(
         wall, all_series, kernel_size=3)
 
-    # Print average dissonance
-    print("\n" + "=" * 50)
-    print("AVERAGE DISSONANCE")
-    print("=" * 50)
-    for name, dmap in metrics.items():
-        print(f"  {name:20s}: mean={dmap.mean():.4f}  std={dmap.std():.4f}  "
-              f"min={dmap.min():.4f}  max={dmap.max():.4f}")
-    print("=" * 50)
+    # Identify which positions are shuffled vs not
+    identity_y, identity_x = np.mgrid[0:wall.height, 0:wall.width]
+    is_shuffled = (wall._perm_x != identity_x) | (wall._perm_y != identity_y)
 
-    # Plot 1x3 heatmaps
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    num_shuffled = is_shuffled.sum()
+    num_correct = (~is_shuffled).sum()
+    print(f"\nPositions: {num_shuffled} shuffled, {num_correct} correct")
+
+    # Print average dissonance + shuffled vs correct breakdown
+    print("\n" + "=" * 60)
+    print("DISSONANCE: SHUFFLED vs CORRECT POSITIONS")
+    print("=" * 60)
+    for name, dmap in metrics.items():
+        shuffled_vals = dmap[is_shuffled]
+        correct_vals = dmap[~is_shuffled]
+        sep = (shuffled_vals.mean() - correct_vals.mean()) / np.sqrt(
+            (shuffled_vals.std()**2 + correct_vals.std()**2) / 2) if correct_vals.std() > 0 else float('inf')
+        print(f"  {name}:")
+        print(f"    Shuffled  (n={len(shuffled_vals):5d}): mean={shuffled_vals.mean():.4f}  std={shuffled_vals.std():.4f}")
+        print(f"    Correct   (n={len(correct_vals):5d}): mean={correct_vals.mean():.4f}  std={correct_vals.std():.4f}")
+        print(f"    Separation (Cohen's d): {sep:.2f}")
+        print()
+    print("=" * 60)
+
+    # Plot: row 1 = heatmaps, row 2 = histograms
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
     fig.suptitle(f'Metric Comparison — {args.num_swaps} swaps, {args.frames} frames, stride {args.stride}',
                  fontsize=14, fontweight='bold')
 
-    for ax, (name, dmap) in zip(axes, metrics.items()):
-        im = ax.imshow(dmap, cmap='hot', interpolation='nearest')
-        ax.set_title(f'{name}\nmean={dmap.mean():.2f}', fontsize=11)
-        ax.axis('off')
-        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    for col, (name, dmap) in enumerate(metrics.items()):
+        # Row 1: heatmap
+        ax_heat = axes[0, col]
+        im = ax_heat.imshow(dmap, cmap='hot', interpolation='nearest')
+        ax_heat.set_title(f'{name}\nmean={dmap.mean():.2f}', fontsize=11)
+        ax_heat.axis('off')
+        plt.colorbar(im, ax=ax_heat, fraction=0.046, pad=0.04)
+
+        # Row 2: histogram comparing shuffled vs correct
+        ax_hist = axes[1, col]
+        shuffled_vals = dmap[is_shuffled]
+        correct_vals = dmap[~is_shuffled]
+
+        bins = np.linspace(dmap.min(), dmap.max(), 50)
+        ax_hist.hist(correct_vals, bins=bins, alpha=0.6, label=f'Correct (n={len(correct_vals)})',
+                     color='steelblue', density=True)
+        ax_hist.hist(shuffled_vals, bins=bins, alpha=0.6, label=f'Shuffled (n={len(shuffled_vals)})',
+                     color='tomato', density=True)
+        ax_hist.axvline(correct_vals.mean(), color='steelblue', linestyle='--', linewidth=1.5)
+        ax_hist.axvline(shuffled_vals.mean(), color='tomato', linestyle='--', linewidth=1.5)
+        ax_hist.set_xlabel('Dissonance')
+        ax_hist.set_ylabel('Density')
+        ax_hist.set_title(f'{name} — Distribution', fontsize=11)
+        ax_hist.legend(fontsize=9)
 
     plt.tight_layout()
 

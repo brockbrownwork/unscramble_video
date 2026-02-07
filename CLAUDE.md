@@ -41,7 +41,7 @@ unscramble_video/
 ├── gpu_utils.py                       # GPU acceleration utilities (CuPy)
 ├── neighbor_dissonance_gui.py         # Interactive dissonance visualization
 ├── greedy_solver_gui_pyqt.py          # Interactive solver (PyQt5, cute pink theme)
-├── compare_metrics.py                 # CLI tool comparing distance metrics side-by-side
+├── compare_metrics.py                 # CLI tool comparing metrics + shuffled vs correct distributions
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
 ├── benchmark_gpu.py                   # GPU vs CPU performance benchmarking
 ├── *.ipynb                            # Experimental notebooks
@@ -65,7 +65,7 @@ python greedy_solver_gui_pyqt.py     # Run solver with animation (PyQt5, pink th
 # Run CLI experiment
 python experiment_neighbor_dissonance.py -v video.mkv -n 20 -f 100
 
-# Compare distance metrics (Euclidean, Cosine, Dot Product) side-by-side
+# Compare distance metrics side-by-side with shuffled vs correct distribution analysis
 python compare_metrics.py -v video.mkv -f 100 -s 30 -n 20
 
 # Run GPU benchmark
