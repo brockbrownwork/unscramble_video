@@ -593,22 +593,35 @@ class TVWall:
         center_series = all_series_cpu[y, x]  # shape: (3, num_frames)
 
         # For simple metrics, use fast NumPy computation instead of aeon
-        if distance_metric in ('euclidean', 'squared', 'manhattan'):
+        if distance_metric in ('euclidean', 'squared', 'manhattan', 'cosine'):
             # Stack neighbor series: shape (n_neighbors, 3, num_frames)
             neighbor_series = np.array([all_series_cpu[ny, nx] for nx, ny in neighbors])
 
-            # Compute distances from center to each neighbor
-            diff = neighbor_series - center_series  # broadcasting
+            if distance_metric == 'cosine':
+                # Cosine distance: 1 - (a·b / (|a|*|b|))
+                # Flatten to 1D vectors for dot product
+                center_flat = center_series.flatten().astype(np.float64)
+                neighbor_flat = neighbor_series.reshape(len(neighbors), -1).astype(np.float64)
+                dots = neighbor_flat @ center_flat
+                center_norm = np.linalg.norm(center_flat)
+                neighbor_norms = np.linalg.norm(neighbor_flat, axis=1)
+                # Avoid division by zero
+                denom = center_norm * neighbor_norms
+                denom = np.where(denom == 0, 1.0, denom)
+                distances = 1.0 - dots / denom
+            else:
+                # Compute distances from center to each neighbor
+                diff = neighbor_series - center_series  # broadcasting
 
-            if distance_metric == 'euclidean':
-                # Euclidean: sqrt(sum of squared differences)
-                distances = np.sqrt(np.sum(diff ** 2, axis=(1, 2)))
-            elif distance_metric == 'squared':
-                # Squared Euclidean: sum of squared differences
-                distances = np.sum(diff ** 2, axis=(1, 2))
-            else:  # manhattan
-                # Manhattan: sum of absolute differences
-                distances = np.sum(np.abs(diff), axis=(1, 2))
+                if distance_metric == 'euclidean':
+                    # Euclidean: sqrt(sum of squared differences)
+                    distances = np.sqrt(np.sum(diff ** 2, axis=(1, 2)))
+                elif distance_metric == 'squared':
+                    # Squared Euclidean: sum of squared differences
+                    distances = np.sum(diff ** 2, axis=(1, 2))
+                else:  # manhattan
+                    # Manhattan: sum of absolute differences
+                    distances = np.sum(np.abs(diff), axis=(1, 2))
 
             return float(distances.mean())
 
@@ -622,12 +635,6 @@ class TVWall:
         if distance_metric == 'dtw':
             from aeon.distances import dtw_pairwise_distance
             distances = dtw_pairwise_distance(stacked, window=window)
-        elif distance_metric == 'cosine':
-            # Compute cosine distance manually (1 - cosine similarity)
-            # Flatten each series to 1D for cosine computation
-            flat = stacked.reshape(stacked.shape[0], -1)
-            from scipy.spatial.distance import cdist
-            distances = cdist(flat, flat, metric='cosine')
         else:
             # Try to import the requested metric from aeon.distances
             import aeon.distances as aeon_dist
@@ -689,13 +696,86 @@ class TVWall:
                 all_series, kernel_size, distance_metric
             )
 
-        # CPU path
+        # Vectorized CPU path for simple metrics (including cosine)
+        if distance_metric in ('euclidean', 'squared', 'manhattan', 'cosine'):
+            return self._compute_dissonance_map_vectorized(
+                all_series, kernel_size, distance_metric
+            )
+
+        # Slow per-pixel CPU path (DTW and other complex metrics)
         dissonance_map = np.zeros((self.height, self.width))
         for y in range(self.height):
             for x in range(self.width):
                 dissonance_map[y, x] = self.compute_position_dissonance(
                     x, y, all_series, kernel_size, distance_metric, window
                 )
+        return dissonance_map
+
+    def _compute_dissonance_map_vectorized(self, all_series, kernel_size=3,
+                                            distance_metric='euclidean'):
+        """
+        Vectorized CPU dissonance map for simple metrics.
+
+        Iterates over kernel offsets (not pixels), computing distances for all
+        pixels at once using NumPy broadcasting. Same approach as the GPU path.
+        """
+        all_series = to_cpu(all_series).astype(np.float64)
+        height, width = self.height, self.width
+        radius = kernel_size // 2
+
+        total_distances = np.zeros((height, width), dtype=np.float64)
+        neighbor_counts = np.zeros((height, width), dtype=np.float64)
+
+        # Precompute norms for cosine distance
+        if distance_metric == 'cosine':
+            # Flatten channels+frames: (H, W, 3*F)
+            flat_series = all_series.reshape(height, width, -1)
+            norms = np.linalg.norm(flat_series, axis=2)  # (H, W)
+
+        for dy in range(-radius, radius + 1):
+            for dx in range(-radius, radius + 1):
+                if dx == 0 and dy == 0:
+                    continue
+
+                # Compute overlap regions
+                c_x_start = max(0, -dx)
+                c_x_end = min(width, width - dx)
+                c_y_start = max(0, -dy)
+                c_y_end = min(height, height - dy)
+                n_x_start = c_x_start + dx
+                n_x_end = c_x_end + dx
+                n_y_start = c_y_start + dy
+                n_y_end = c_y_end + dy
+
+                center = all_series[c_y_start:c_y_end, c_x_start:c_x_end]
+                neighbor = all_series[n_y_start:n_y_end, n_x_start:n_x_end]
+
+                if distance_metric == 'cosine':
+                    center_flat = flat_series[c_y_start:c_y_end, c_x_start:c_x_end]
+                    neighbor_flat = flat_series[n_y_start:n_y_end, n_x_start:n_x_end]
+                    dots = np.sum(center_flat * neighbor_flat, axis=2)
+                    c_norms = norms[c_y_start:c_y_end, c_x_start:c_x_end]
+                    n_norms = norms[n_y_start:n_y_end, n_x_start:n_x_end]
+                    denom = c_norms * n_norms
+                    denom = np.where(denom == 0, 1.0, denom)
+                    dist = 1.0 - dots / denom
+                else:
+                    diff = neighbor - center
+                    if distance_metric == 'euclidean':
+                        dist = np.sqrt(np.sum(diff ** 2, axis=(2, 3)))
+                    elif distance_metric == 'squared':
+                        dist = np.sum(diff ** 2, axis=(2, 3))
+                    elif distance_metric == 'manhattan':
+                        dist = np.sum(np.abs(diff), axis=(2, 3))
+
+                total_distances[c_y_start:c_y_end, c_x_start:c_x_end] += dist
+                neighbor_counts[c_y_start:c_y_end, c_x_start:c_x_end] += 1.0
+
+        dissonance_map = np.where(
+            neighbor_counts > 0,
+            total_distances / neighbor_counts,
+            0.0
+        )
         return dissonance_map
 
     def compute_batch_dissonance(self, positions, all_series=None, kernel_size=3,

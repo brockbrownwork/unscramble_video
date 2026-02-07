@@ -57,7 +57,8 @@ def draw_circle(frame, center_x, center_y, radius, color, thickness=2):
 
 
 def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffle_animation.gif",
-                          pixel_scale=8, swap_duration_frames=15, fps=30, highlight_frames=20):
+                          pixel_scale=8, swap_duration_frames=15, fps=30, highlight_frames=20,
+                          output_scale=0.25):
     """
     Create an animation showing pixels being swapped as the video plays.
 
@@ -70,6 +71,7 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
         swap_duration_frames: how many output frames the swap animation takes
         fps: output frame rate
         highlight_frames: how many frames to show red circles before swap starts
+        output_scale: scale factor for final GIF size (0.25 = quarter size)
     """
     num_frames, orig_h, orig_w, _ = frames.shape
 
@@ -99,7 +101,9 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
     else:
         total_output_frames = num_frames
 
-    print(f"Creating animation: {orig_w}x{orig_h} pixels, scaled to {scaled_w}x{scaled_h}")
+    output_w = int(scaled_w * output_scale)
+    output_h = int(scaled_h * output_scale)
+    print(f"Creating animation: {orig_w}x{orig_h} pixels, scaled to {scaled_w}x{scaled_h}, output: {output_w}x{output_h}")
     print(f"Video frames: {num_frames}, Output frames: {total_output_frames}")
     print(f"Swaps scheduled: {len(swap_pairs)}")
 
@@ -282,7 +286,12 @@ def create_swap_animation(frames, swap_pairs, swap_schedule, output_path="shuffl
                         for px in range(max(0, cx - half), min(scaled_w, cx + half)):
                             output_frame[py, px] = color
 
-        output_frames.append(Image.fromarray(output_frame))
+        # Resize frame for smaller output GIF
+        pil_frame = Image.fromarray(output_frame)
+        if output_scale != 1.0:
+            new_size = (int(scaled_w * output_scale), int(scaled_h * output_scale))
+            pil_frame = pil_frame.resize(new_size, Image.LANCZOS)
+        output_frames.append(pil_frame)
 
     # Save as GIF
     print(f"Saving to {output_path}...")
@@ -372,6 +381,8 @@ def main():
                        help="Allow swaps to overlap (default: sequential, one at a time)")
     parser.add_argument("--seed", type=int, default=420,
                        help="Random seed for swap generation")
+    parser.add_argument("--output-scale", type=float, default=0.25,
+                       help="Scale factor for output GIF size (default: 0.25 = quarter size)")
 
     args = parser.parse_args()
 
@@ -413,7 +424,8 @@ def main():
         pixel_scale=args.pixel_scale,
         swap_duration_frames=args.swap_duration,
         fps=args.fps,
-        highlight_frames=args.highlight_frames
+        highlight_frames=args.highlight_frames,
+        output_scale=args.output_scale
     )
 
 
