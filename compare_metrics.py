@@ -156,6 +156,24 @@ def main():
         print(f"    Shuffled  (n={len(shuffled_vals):5d}): mean={shuffled_vals.mean():.4f}  std={shuffled_vals.std():.4f}")
         print(f"    Correct   (n={len(correct_vals):5d}): mean={correct_vals.mean():.4f}  std={correct_vals.std():.4f}")
         print(f"    Separation (Cohen's d): {sep:.2f}")
+
+        # Overlap analysis
+        bins = np.linspace(dmap.min(), dmap.max(), 50)
+        correct_counts, _ = np.histogram(correct_vals, bins=bins)
+        shuffled_counts, _ = np.histogram(shuffled_vals, bins=bins)
+        overlap_mask = (correct_counts > 0) & (shuffled_counts > 0)
+        n_overlap_bins = overlap_mask.sum()
+        if n_overlap_bins > 0:
+            overlap_lo = bins[:-1][overlap_mask].min()
+            overlap_hi = bins[1:][overlap_mask].max()
+            n_correct_in = int(((correct_vals >= overlap_lo) & (correct_vals <= overlap_hi)).sum())
+            n_shuffled_in = int(((shuffled_vals >= overlap_lo) & (shuffled_vals <= overlap_hi)).sum())
+        else:
+            n_correct_in = n_shuffled_in = 0
+        print(f"    Overlap bins: {n_overlap_bins}/{len(bins)-1}")
+        print(f"    Correct positions in overlap zone: {n_correct_in}")
+        print(f"    Shuffled positions in overlap zone: {n_shuffled_in}")
+        print(f"    Total positions in overlap zone: {n_correct_in + n_shuffled_in}")
         print()
     print("=" * 60)
 
@@ -184,6 +202,38 @@ def main():
                      color='tomato', density=True)
         ax_hist.axvline(correct_vals.mean(), color='steelblue', linestyle='--', linewidth=1.5)
         ax_hist.axvline(shuffled_vals.mean(), color='tomato', linestyle='--', linewidth=1.5)
+
+        # Compute overlap: bins where both distributions have counts
+        correct_counts, _ = np.histogram(correct_vals, bins=bins)
+        shuffled_counts, _ = np.histogram(shuffled_vals, bins=bins)
+        overlap_mask = (correct_counts > 0) & (shuffled_counts > 0)
+        n_overlap_bins = overlap_mask.sum()
+
+        # Shade overlap region
+        if n_overlap_bins > 0:
+            overlap_lo = bins[:-1][overlap_mask].min()
+            overlap_hi = bins[1:][overlap_mask].max()
+            ax_hist.axvspan(overlap_lo, overlap_hi, alpha=0.15, color='purple',
+                            label='Overlap zone')
+
+        # Count positions that fall in the overlap range
+        n_correct_in_overlap = 0
+        n_shuffled_in_overlap = 0
+        if n_overlap_bins > 0:
+            n_correct_in_overlap = int(((correct_vals >= overlap_lo) & (correct_vals <= overlap_hi)).sum())
+            n_shuffled_in_overlap = int(((shuffled_vals >= overlap_lo) & (shuffled_vals <= overlap_hi)).sum())
+
+        # Annotate on figure
+        total_in_overlap = n_correct_in_overlap + n_shuffled_in_overlap
+        ax_hist.text(0.98, 0.95,
+                     f'Overlap bins: {n_overlap_bins}/{len(bins)-1}\n'
+                     f'Correct in overlap: {n_correct_in_overlap}\n'
+                     f'Shuffled in overlap: {n_shuffled_in_overlap}\n'
+                     f'Total in overlap: {total_in_overlap}',
+                     transform=ax_hist.transAxes, fontsize=8,
+                     verticalalignment='top', horizontalalignment='right',
+                     bbox=dict(boxstyle='round,pad=0.4', facecolor='#f0e0ff', alpha=0.9))
+
         ax_hist.set_xlabel('Dissonance')
         ax_hist.set_ylabel('Density')
         ax_hist.set_title(f'{name} — Distribution', fontsize=11)
