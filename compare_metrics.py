@@ -5,7 +5,7 @@ Compare distance metrics for neighbor dissonance.
 Computes dissonance heatmaps using 3 metrics side-by-side:
   - Euclidean distance
   - Cosine distance (1 - cosine similarity)
-  - Negative dot product (raw dot product, negated so high = dissimilar)
+  - Dot product difference (||a-b||² via dot product identity, always positive)
 
 Usage:
     python compare_metrics.py -v cab_ride_trimmed.mkv -f 100 -s 30 -n 20
@@ -38,16 +38,15 @@ def parse_args():
 
 def compute_dot_product_dissonance(wall, all_series, kernel_size=3):
     """
-    Compute neighbor dissonance using negative dot product.
+    Compute neighbor dissonance using pairwise dot product difference.
 
-    For each position, computes the mean dot product with its neighbors,
-    then negates it so that high values = dissimilar (consistent with
-    other dissonance metrics).
+    For each position, computes the mean squared difference with its
+    neighbors via the dot product identity:
+        ||a - b||² = dot(a,a) + dot(b,b) - 2*dot(a,b)
 
-    The dot product of two flattened color series measures how much they
-    "agree" in absolute terms. Unlike cosine similarity, it is NOT
-    normalized by magnitude — brighter pixels produce larger dot products
-    regardless of pattern similarity.
+    This is always positive, with high values = dissimilar (consistent
+    with other dissonance metrics). Equivalent to squared Euclidean
+    distance on the flattened color series.
     """
     height, width = wall.height, wall.width
     # Ensure CPU numpy array
@@ -62,7 +61,10 @@ def compute_dot_product_dissonance(wall, all_series, kernel_size=3):
     flat_series = all_series_np.reshape(height, width, -1)
     radius = kernel_size // 2
 
-    total_dots = np.zeros((height, width), dtype=np.float64)
+    # Precompute self dot products: dot(a, a) for each position
+    self_dots = np.sum(flat_series * flat_series, axis=2)  # (height, width)
+
+    total_sq_diff = np.zeros((height, width), dtype=np.float64)
     neighbor_counts = np.zeros((height, width), dtype=np.float64)
 
     for dy in range(-radius, radius + 1):
@@ -81,15 +83,20 @@ def compute_dot_product_dissonance(wall, all_series, kernel_size=3):
 
             center_flat = flat_series[c_y_start:c_y_end, c_x_start:c_x_end]
             neighbor_flat = flat_series[n_y_start:n_y_end, n_x_start:n_x_end]
-            dots = np.sum(center_flat * neighbor_flat, axis=2)
+            cross_dots = np.sum(center_flat * neighbor_flat, axis=2)
 
-            total_dots[c_y_start:c_y_end, c_x_start:c_x_end] += dots
+            # ||a - b||² = dot(a,a) + dot(b,b) - 2*dot(a,b)
+            center_self = self_dots[c_y_start:c_y_end, c_x_start:c_x_end]
+            neighbor_self = self_dots[n_y_start:n_y_end, n_x_start:n_x_end]
+            sq_diff = center_self + neighbor_self - 2.0 * cross_dots
+
+            total_sq_diff[c_y_start:c_y_end, c_x_start:c_x_end] += sq_diff
             neighbor_counts[c_y_start:c_y_end, c_x_start:c_x_end] += 1.0
 
-    # Negate: high dot product = similar, so negative = low dissonance
+    # Positive: high value = dissimilar neighbors
     dissonance_map = np.where(
         neighbor_counts > 0,
-        -total_dots / neighbor_counts,
+        total_sq_diff / neighbor_counts,
         0.0
     )
     return dissonance_map
@@ -132,8 +139,8 @@ def main():
     metrics['Cosine'] = wall.compute_dissonance_map(
         all_series=all_series, kernel_size=3, distance_metric='cosine')
 
-    print("--- Dot Product (negated) ---")
-    metrics['Dot Product (neg)'] = compute_dot_product_dissonance(
+    print("--- Dot Product Difference ---")
+    metrics['Dot Product Diff'] = compute_dot_product_dissonance(
         wall, all_series, kernel_size=3)
 
     # Identify which positions are shuffled vs not
