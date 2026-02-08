@@ -4,6 +4,9 @@
 
 **unscramble_video** is an experimental tool that reconstructs scrambled video frames by analyzing pixel color sequences over time.
 
+![shuffle_animation](./shuffle_animation.gif)
+*Figure 1: illustrates the concept of switching a pixel's position while preserving how the pixel changes over time.*
+
 ### The Thought Experiment
 
 Imagine a giant wall of CRT TVs arranged in a 2D grid, where each TV displays only one color at a time - essentially acting as a single pixel. When you play a video, each TV shows the color sequence for its corresponding pixel position.
