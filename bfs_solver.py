@@ -54,7 +54,7 @@ class BFSSolver:
                  dtw_window=0.1,
                  initial_candidates=8,
                  permutation_limit=100_000,
-                 shortlist_size=50,
+                 shortlist_size=0,
                  rng_seed=None,
                  snapshot_interval=10_000,
                  snapshot_dir="bfs_output"):
@@ -365,7 +365,7 @@ class BFSSolver:
 
         unplaced_mask = self.is_unplaced
         unplaced_indices = np.where(unplaced_mask)[0]
-        if len(unplaced_indices) <= S:
+        if not S or len(unplaced_indices) <= S:
             return unplaced_indices.tolist()
 
         # Target: mean of placed neighbors' mean colors
@@ -683,7 +683,7 @@ def run_pygame_gui(solver, wall, args):
                 f"Speed: {pps:.0f} px/s",
                 "",
                 f"Metric: {solver.distance_metric}",
-                f"Shortlist: {solver.shortlist_size}",
+                f"Shortlist: {'off' if not solver.shortlist_size else solver.shortlist_size}",
                 f"Mode: {solver.neighbor_mode}",
             ]
 
@@ -756,8 +756,8 @@ def parse_args():
                         help="Candidates for initial permutation search (C)")
     parser.add_argument("--permutation-limit", type=int, default=100_000,
                         help="Max permutations before greedy fallback")
-    parser.add_argument("--shortlist", type=int, default=50,
-                        help="Shortlist size for BFS expansion (S)")
+    parser.add_argument("--shortlist", type=int, default=0,
+                        help="Shortlist size for BFS expansion (S). 0 = disabled (evaluate all unplaced)")
     parser.add_argument("--rng-seed", type=int, default=None,
                         help="RNG seed for solver")
 
