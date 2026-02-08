@@ -21,7 +21,6 @@ import time
 
 import numpy as np
 from PIL import Image
-from scipy.spatial import cKDTree
 from tqdm import tqdm
 
 from tv_wall import TVWall
@@ -82,7 +81,8 @@ class BFSSolver:
         self.all_series = None
         self.series_flat = None
         self.mean_colors = None
-        self._kdtree = None
+        self._lum_order = None      # pixel indices sorted by luminance
+        self._lum_sorted = None     # luminance values in sorted order
         self.output_grid = None
         self.placed_at = None
         self.is_unplaced = None
@@ -133,8 +133,13 @@ class BFSSolver:
         self.neighbor_count = np.zeros((self.H, self.W), dtype=np.int8)
         self.insertion_counter = 0
 
-        # Build KD-tree on mean colors for fast nearest-neighbor shortlisting
-        self._kdtree = cKDTree(self.mean_colors)
+        # Build luminance-sorted index for fast nearest-neighbor shortlisting.
+        # Luminance reduces 3D color to 1D, enabling binary search + local scan.
+        luminance = (0.299 * self.mean_colors[:, 0]
+                     + 0.587 * self.mean_colors[:, 1]
+                     + 0.114 * self.mean_colors[:, 2])
+        self._lum_order = np.argsort(luminance)       # pixel indices sorted by lum
+        self._lum_sorted = luminance[self._lum_order]  # sorted luminance values
 
         # Transfer series to GPU once if available
         if self._use_gpu:
@@ -223,14 +228,14 @@ class BFSSolver:
     def _find_closest_candidates(self, reference_series, count):
         """Find top `count` unplaced pixels closest to reference_series.
 
-        Uses KD-tree on mean colors as a coarse filter, then re-ranks by
-        full time-series distance. DTW falls back to brute-force CPU.
+        Uses GPU acceleration (CuPy) when available and the metric supports it.
+        Falls back to CPU (NumPy) otherwise. Only called once (Phase 2).
         """
         unplaced_indices = np.where(self.is_unplaced)[0]
         if len(unplaced_indices) <= count:
             return unplaced_indices.tolist()
 
-        # DTW cannot use KD-tree shortcut; brute-force with full series
+        # DTW cannot be GPU-accelerated, use CPU path
         if self.distance_metric == "dtw":
             from aeon.distances import dtw_distance
             distances = np.array([
@@ -242,46 +247,55 @@ class BFSSolver:
             top = top[np.argsort(distances[top])]
             return unplaced_indices[top].tolist()
 
-        # KD-tree coarse filter: get ~4x candidates by mean-RGB proximity,
-        # then re-rank by full time-series distance for accuracy.
-        ref_mean = reference_series.mean(axis=1)  # (3,)
-        coarse_count = min(count * 4, self.total_pixels)
-        k = coarse_count
-        while True:
-            _, indices = self._kdtree.query(ref_mean, k=k)
-            indices = np.asarray(indices).ravel()
-            unplaced_mask = self.is_unplaced[indices]
-            coarse_indices = indices[unplaced_mask]
-            if len(coarse_indices) >= coarse_count or k >= self.total_pixels:
-                coarse_indices = coarse_indices[:coarse_count]
-                break
-            k = min(k * 2, self.total_pixels)
+        # GPU path for vectorizable metrics
+        try:
+            import cupy as cp
+            use_gpu = True
+        except ImportError:
+            use_gpu = False
 
-        # Re-rank coarse candidates by full time-series distance
-        cand_series = self.series_flat[coarse_indices]  # (C, 3, T)
-        ref = reference_series[np.newaxis, :, :]  # (1, 3, T)
-        diff = cand_series - ref
-        if self.distance_metric == "euclidean":
-            distances = np.sqrt(np.sum(diff ** 2, axis=(1, 2)))
-        elif self.distance_metric == "squared":
-            distances = np.sum(diff ** 2, axis=(1, 2))
-        elif self.distance_metric == "manhattan":
-            distances = np.sum(np.abs(diff), axis=(1, 2))
-        elif self.distance_metric == "cosine":
+        if use_gpu:
+            xp = cp
+            unplaced_series = xp.asarray(self.series_flat[unplaced_indices])  # (N, 3, T)
+            ref = xp.asarray(reference_series[np.newaxis, :, :])  # (1, 3, T)
+        else:
+            xp = np
+            unplaced_series = self.series_flat[unplaced_indices]  # (N, 3, T)
+            ref = reference_series[np.newaxis, :, :]  # (1, 3, T)
+
+        if self.distance_metric == "cosine":
             ref_flat = ref.reshape(-1)
-            cand_flat = cand_series.reshape(len(coarse_indices), -1)
-            dots = cand_flat @ ref_flat
-            ref_norm = np.linalg.norm(ref_flat)
-            cand_norms = np.linalg.norm(cand_flat, axis=1)
-            denom = ref_norm * cand_norms
-            denom = np.where(denom == 0, 1.0, denom)
+            unplaced_flat = unplaced_series.reshape(len(unplaced_indices), -1)
+            dots = unplaced_flat @ ref_flat
+            ref_norm = xp.linalg.norm(ref_flat)
+            unp_norms = xp.linalg.norm(unplaced_flat, axis=1)
+            denom = ref_norm * unp_norms
+            denom = xp.where(denom == 0, 1.0, denom)
             distances = 1.0 - dots / denom
         else:
-            distances = np.sqrt(np.sum(diff ** 2, axis=(1, 2)))
+            diff = unplaced_series - ref
+            if self.distance_metric == "euclidean":
+                distances = xp.sqrt(xp.sum(diff ** 2, axis=(1, 2)))
+            elif self.distance_metric == "squared":
+                distances = xp.sum(diff ** 2, axis=(1, 2))
+            elif self.distance_metric == "manhattan":
+                distances = xp.sum(xp.abs(diff), axis=(1, 2))
+            else:
+                distances = xp.sqrt(xp.sum(diff ** 2, axis=(1, 2)))
 
-        top = np.argpartition(distances, count)[:count]
-        top = top[np.argsort(distances[top])]
-        return coarse_indices[top].tolist()
+        if use_gpu:
+            # argpartition and argsort on GPU, then transfer indices to CPU
+            top = xp.argpartition(distances, count)[:count]
+            top = top[xp.argsort(distances[top])]
+            top_cpu = cp.asnumpy(top)
+            # Free GPU memory
+            del unplaced_series, ref, distances
+            cp.get_default_memory_pool().free_all_blocks()
+        else:
+            top_cpu = np.argpartition(distances, count)[:count]
+            top_cpu = top_cpu[np.argsort(distances[top_cpu])]
+
+        return unplaced_indices[top_cpu].tolist()
 
     def _evaluate_permutation(self, frontier_positions, candidates, assignment,
                               seed_idx):
@@ -372,8 +386,9 @@ class BFSSolver:
     def _get_shortlist(self, placed_neighbor_positions):
         """Top S unplaced candidates by mean-RGB proximity to placed neighbors.
 
-        Uses a KD-tree for O(log N) nearest-neighbor queries instead of
-        brute-force O(N) scanning.
+        Uses a luminance-sorted index with binary search for O(log N) lookup
+        followed by a local scan, instead of brute-force O(N) over all
+        unplaced pixels.
         """
         S = self.shortlist_size
 
@@ -387,18 +402,36 @@ class BFSSolver:
             for nx, ny in placed_neighbor_positions
         ])
         target = self.mean_colors[neighbor_pixel_indices].mean(axis=0)  # (3,)
+        target_lum = 0.299 * target[0] + 0.587 * target[1] + 0.114 * target[2]
 
-        # Query KD-tree, over-fetching to account for already-placed pixels.
-        # Double k each retry until we have enough unplaced candidates.
-        k = min(S * 2, self.total_pixels)
-        while True:
-            _, indices = self._kdtree.query(target, k=k)
-            indices = np.asarray(indices).ravel()
-            unplaced_mask = self.is_unplaced[indices]
-            result = indices[unplaced_mask]
-            if len(result) >= S or k >= self.total_pixels:
-                return result[:S].tolist()
-            k = min(k * 2, self.total_pixels)
+        # Binary search to find insertion point in sorted luminance array
+        center = np.searchsorted(self._lum_sorted, target_lum)
+        N = self.total_pixels
+
+        # Expand outward from center, collecting unplaced pixels until we
+        # have S candidates. Two pointers moving left and right.
+        result = []
+        lo = center - 1
+        hi = center
+        while len(result) < S and (lo >= 0 or hi < N):
+            # Pick the closer side
+            if hi >= N:
+                idx = self._lum_order[lo]
+                lo -= 1
+            elif lo < 0:
+                idx = self._lum_order[hi]
+                hi += 1
+            elif (target_lum - self._lum_sorted[lo]) <= (self._lum_sorted[hi] - target_lum):
+                idx = self._lum_order[lo]
+                lo -= 1
+            else:
+                idx = self._lum_order[hi]
+                hi += 1
+
+            if self.is_unplaced[idx]:
+                result.append(idx)
+
+        return result
 
     def _evaluate_candidate(self, candidate_idx, placed_neighbor_positions):
         """Mean distance from candidate to all placed neighbors."""
