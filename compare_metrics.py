@@ -14,7 +14,7 @@ Usage:
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import norm, skewnorm
+from scipy.stats import norm, skewnorm, kstest
 
 from tv_wall import TVWall
 
@@ -164,19 +164,19 @@ def main():
             (shuffled_vals.std()**2 + correct_vals.std()**2) / 2) if correct_vals.std() > 0 else float('inf')
         print(f"  {name}:")
         print(f"    Shuffled  (n={len(shuffled_vals):5d}): mean={shuffled_vals.mean():.4f}  std={shuffled_vals.std():.4f}")
-        if args.skew_normal:
-            a_s_con, mu_s_con, std_s_con = skewnorm.fit(shuffled_vals)
-            print(f"      Skew-normal fit: α={a_s_con:.4f}, ξ={mu_s_con:.4f}, ω={std_s_con:.4f}")
-        else:
-            mu_s_con, std_s_con = norm.fit(shuffled_vals)
-            print(f"      Gaussian fit: μ={mu_s_con:.4f}, σ={std_s_con:.4f}")
+        a_s_sn, mu_s_sn, std_s_sn = skewnorm.fit(shuffled_vals)
+        mu_s_n, std_s_n = norm.fit(shuffled_vals)
+        ks_s_sn, p_s_sn = kstest(shuffled_vals, 'skewnorm', args=(a_s_sn, mu_s_sn, std_s_sn))
+        ks_s_n, p_s_n = kstest(shuffled_vals, 'norm', args=(mu_s_n, std_s_n))
+        print(f"      Skew-normal fit: α={a_s_sn:.4f}, ξ={mu_s_sn:.4f}, ω={std_s_sn:.4f}  | KS D={ks_s_sn:.4f}, p={p_s_sn:.4g}")
+        print(f"      Normal fit:      μ={mu_s_n:.4f}, σ={std_s_n:.4f}                  | KS D={ks_s_n:.4f}, p={p_s_n:.4g}")
         print(f"    Correct   (n={len(correct_vals):5d}): mean={correct_vals.mean():.4f}  std={correct_vals.std():.4f}")
-        if args.skew_normal:
-            a_c_con, mu_c_con, std_c_con = skewnorm.fit(correct_vals)
-            print(f"      Skew-normal fit: α={a_c_con:.4f}, ξ={mu_c_con:.4f}, ω={std_c_con:.4f}")
-        else:
-            mu_c_con, std_c_con = norm.fit(correct_vals)
-            print(f"      Gaussian fit: μ={mu_c_con:.4f}, σ={std_c_con:.4f}")
+        a_c_sn, mu_c_sn, std_c_sn = skewnorm.fit(correct_vals)
+        mu_c_n, std_c_n = norm.fit(correct_vals)
+        ks_c_sn, p_c_sn = kstest(correct_vals, 'skewnorm', args=(a_c_sn, mu_c_sn, std_c_sn))
+        ks_c_n, p_c_n = kstest(correct_vals, 'norm', args=(mu_c_n, std_c_n))
+        print(f"      Skew-normal fit: α={a_c_sn:.4f}, ξ={mu_c_sn:.4f}, ω={std_c_sn:.4f}  | KS D={ks_c_sn:.4f}, p={p_c_sn:.4g}")
+        print(f"      Normal fit:      μ={mu_c_n:.4f}, σ={std_c_n:.4f}                  | KS D={ks_c_n:.4f}, p={p_c_n:.4g}")
         print(f"    Separation (Cohen's d): {sep:.2f}")
 
         # Overlap analysis
@@ -237,20 +237,29 @@ def main():
         # Fit and draw distribution curves
         x_fit = np.linspace(dmap.min(), dmap.max(), 300)
 
-        if args.skew_normal:
-            a_s, mu_s, std_s = skewnorm.fit(shuffled_vals)
-            ax_hist.plot(x_fit, skewnorm.pdf(x_fit, a_s, mu_s, std_s), color='darkred', linewidth=2,
-                         linestyle='-', label=f'Shuffled fit (α={a_s:.2f}, ξ={mu_s:.2f}, ω={std_s:.2f})')
-            a_c, mu_c, std_c = skewnorm.fit(correct_vals)
-            ax_hist.plot(x_fit, skewnorm.pdf(x_fit, a_c, mu_c, std_c), color='darkblue', linewidth=2,
-                         linestyle='-', label=f'Correct fit (α={a_c:.2f}, ξ={mu_c:.2f}, ω={std_c:.2f})')
-        else:
-            mu_s, std_s = norm.fit(shuffled_vals)
-            ax_hist.plot(x_fit, norm.pdf(x_fit, mu_s, std_s), color='darkred', linewidth=2,
-                         linestyle='-', label=f'Shuffled fit (μ={mu_s:.2f}, σ={std_s:.2f})')
-            mu_c, std_c = norm.fit(correct_vals)
-            ax_hist.plot(x_fit, norm.pdf(x_fit, mu_c, std_c), color='darkblue', linewidth=2,
-                         linestyle='-', label=f'Correct fit (μ={mu_c:.2f}, σ={std_c:.2f})')
+        # Fit both skew-normal and normal distributions
+        a_s, mu_s_sn, std_s_sn = skewnorm.fit(shuffled_vals)
+        mu_s_n, std_s_n = norm.fit(shuffled_vals)
+        a_c, mu_c_sn, std_c_sn = skewnorm.fit(correct_vals)
+        mu_c_n, std_c_n = norm.fit(correct_vals)
+
+        # KS goodness-of-fit tests (lower D = better fit)
+        ks_s_sn, _ = kstest(shuffled_vals, 'skewnorm', args=(a_s, mu_s_sn, std_s_sn))
+        ks_s_n, _ = kstest(shuffled_vals, 'norm', args=(mu_s_n, std_s_n))
+        ks_c_sn, _ = kstest(correct_vals, 'skewnorm', args=(a_c, mu_c_sn, std_c_sn))
+        ks_c_n, _ = kstest(correct_vals, 'norm', args=(mu_c_n, std_c_n))
+
+        # Plot skew-normal fits (solid lines)
+        ax_hist.plot(x_fit, skewnorm.pdf(x_fit, a_s, mu_s_sn, std_s_sn), color='darkred', linewidth=2,
+                     linestyle='-', label=f'Shuffled SkewN (D={ks_s_sn:.3f})')
+        ax_hist.plot(x_fit, skewnorm.pdf(x_fit, a_c, mu_c_sn, std_c_sn), color='darkblue', linewidth=2,
+                     linestyle='-', label=f'Correct SkewN (D={ks_c_sn:.3f})')
+
+        # Plot normal fits (dashed lines)
+        ax_hist.plot(x_fit, norm.pdf(x_fit, mu_s_n, std_s_n), color='darkred', linewidth=1.5,
+                     linestyle='--', label=f'Shuffled Normal (D={ks_s_n:.3f})')
+        ax_hist.plot(x_fit, norm.pdf(x_fit, mu_c_n, std_c_n), color='darkblue', linewidth=1.5,
+                     linestyle='--', label=f'Correct Normal (D={ks_c_n:.3f})')
 
         # Compute overlap: bins where both distributions have counts
         correct_counts, _ = np.histogram(correct_vals, bins=bins)
@@ -287,10 +296,19 @@ def main():
                      verticalalignment='top', horizontalalignment='right',
                      bbox=dict(boxstyle='round,pad=0.4', facecolor='#f0e0ff', alpha=0.9))
 
+        # Fit quality annotation box (top-left)
+        ax_hist.text(0.02, 0.95,
+                     f'Fit Quality (KS D, lower=better):\n'
+                     f'  Correct:   SkewN={ks_c_sn:.3f}  Normal={ks_c_n:.3f}\n'
+                     f'  Shuffled:  SkewN={ks_s_sn:.3f}  Normal={ks_s_n:.3f}',
+                     transform=ax_hist.transAxes, fontsize=7,
+                     verticalalignment='top', horizontalalignment='left',
+                     bbox=dict(boxstyle='round,pad=0.4', facecolor='#e0f0e0', alpha=0.9))
+
         ax_hist.set_xlabel('Dissonance')
         ax_hist.set_ylabel('Density')
         ax_hist.set_title(f'{name} Neighbor Dissonance — Distribution', fontsize=11)
-        ax_hist.legend(fontsize=9)
+        ax_hist.legend(fontsize=7, loc='center right')
 
     plt.tight_layout(rect=[0, 0, 1, 0.93])
 
