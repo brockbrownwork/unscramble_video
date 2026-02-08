@@ -49,7 +49,7 @@ class BFSSolver:
 
     def __init__(self, wall: TVWall, *,
                  seed_position="random",
-                 neighbor_mode="cardinal",
+                 neighbor_mode="all",
                  distance_metric="euclidean",
                  dtw_window=0.1,
                  initial_candidates=8,
@@ -744,7 +744,7 @@ def parse_args():
 
     parser.add_argument("--seed-position", type=str, default="random",
                         help='Seed pixel position: "random" or "x,y"')
-    parser.add_argument("--neighbor-mode", type=str, default="cardinal",
+    parser.add_argument("--neighbor-mode", type=str, default="all",
                         choices=["cardinal", "all"],
                         help="Neighbor connectivity: cardinal (4) or all (8)")
     parser.add_argument("--metric", type=str, default="euclidean",
