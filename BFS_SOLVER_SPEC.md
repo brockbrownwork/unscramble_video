@@ -2,7 +2,7 @@
 
 ## Overview
 
-A new solver that reconstructs a scrambled video grid by **building the solution from scratch** rather than fixing a scrambled arrangement via swaps. Starting from a single seed pixel, it grows the solved region outward in a breadth-first manner, always placing the best-fitting unplaced pixel into the next frontier position.
+A new solver that reconstructs a scrambled video grid by **building the solution from scratch** rather than fixing a scrambled arrangement via swaps. Starting from a single seed pixel, it grows the solved region outward in a breadth-first manner, always placing the best-fitting unplaced pixel into the next frontier position. As it solves it will visualize the current output in a pygame GUI.
 
 **Analogy**: Assembling a jigsaw puzzle — start with one piece, attach best-fitting pieces to exposed edges, expand outward.
 
