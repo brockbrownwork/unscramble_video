@@ -191,14 +191,16 @@ class BFSSolver:
             self._expand_frontier((int(yx[1]), int(yx[0])))
 
     def _find_closest_candidates(self, reference_series, count):
-        """Find top `count` unplaced pixels closest to reference_series."""
+        """Find top `count` unplaced pixels closest to reference_series.
+
+        Uses GPU acceleration (CuPy) when available and the metric supports it.
+        Falls back to CPU (NumPy) otherwise.
+        """
         unplaced_indices = np.where(self.is_unplaced)[0]
         if len(unplaced_indices) <= count:
             return unplaced_indices.tolist()
 
-        unplaced_series = self.series_flat[unplaced_indices]  # (N, 3, T)
-        ref = reference_series[np.newaxis, :, :]  # (1, 3, T)
-
+        # DTW cannot be GPU-accelerated, use CPU path
         if self.distance_metric == "dtw":
             from aeon.distances import dtw_distance
             distances = np.array([
@@ -206,29 +208,59 @@ class BFSSolver:
                              window=self.dtw_window)
                 for idx in unplaced_indices
             ])
-        elif self.distance_metric == "cosine":
-            ref_flat = reference_series.flatten()
+            top = np.argpartition(distances, count)[:count]
+            top = top[np.argsort(distances[top])]
+            return unplaced_indices[top].tolist()
+
+        # GPU path for vectorizable metrics
+        try:
+            import cupy as cp
+            use_gpu = True
+        except ImportError:
+            use_gpu = False
+
+        if use_gpu:
+            xp = cp
+            unplaced_series = xp.asarray(self.series_flat[unplaced_indices])  # (N, 3, T)
+            ref = xp.asarray(reference_series[np.newaxis, :, :])  # (1, 3, T)
+        else:
+            xp = np
+            unplaced_series = self.series_flat[unplaced_indices]  # (N, 3, T)
+            ref = reference_series[np.newaxis, :, :]  # (1, 3, T)
+
+        if self.distance_metric == "cosine":
+            ref_flat = ref.reshape(-1)
             unplaced_flat = unplaced_series.reshape(len(unplaced_indices), -1)
             dots = unplaced_flat @ ref_flat
-            ref_norm = np.linalg.norm(ref_flat)
-            unp_norms = np.linalg.norm(unplaced_flat, axis=1)
+            ref_norm = xp.linalg.norm(ref_flat)
+            unp_norms = xp.linalg.norm(unplaced_flat, axis=1)
             denom = ref_norm * unp_norms
-            denom = np.where(denom == 0, 1.0, denom)
+            denom = xp.where(denom == 0, 1.0, denom)
             distances = 1.0 - dots / denom
         else:
             diff = unplaced_series - ref
             if self.distance_metric == "euclidean":
-                distances = np.sqrt(np.sum(diff ** 2, axis=(1, 2)))
+                distances = xp.sqrt(xp.sum(diff ** 2, axis=(1, 2)))
             elif self.distance_metric == "squared":
-                distances = np.sum(diff ** 2, axis=(1, 2))
+                distances = xp.sum(diff ** 2, axis=(1, 2))
             elif self.distance_metric == "manhattan":
-                distances = np.sum(np.abs(diff), axis=(1, 2))
+                distances = xp.sum(xp.abs(diff), axis=(1, 2))
             else:
-                distances = np.sqrt(np.sum(diff ** 2, axis=(1, 2)))
+                distances = xp.sqrt(xp.sum(diff ** 2, axis=(1, 2)))
 
-        top = np.argpartition(distances, count)[:count]
-        top = top[np.argsort(distances[top])]
-        return unplaced_indices[top].tolist()
+        if use_gpu:
+            # argpartition and argsort on GPU, then transfer indices to CPU
+            top = xp.argpartition(distances, count)[:count]
+            top = top[xp.argsort(distances[top])]
+            top_cpu = cp.asnumpy(top)
+            # Free GPU memory
+            del unplaced_series, ref, distances
+            cp.get_default_memory_pool().free_all_blocks()
+        else:
+            top_cpu = np.argpartition(distances, count)[:count]
+            top_cpu = top_cpu[np.argsort(distances[top_cpu])]
+
+        return unplaced_indices[top_cpu].tolist()
 
     def _evaluate_permutation(self, frontier_positions, candidates, assignment,
                               seed_idx):

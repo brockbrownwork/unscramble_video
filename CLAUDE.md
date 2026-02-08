@@ -32,7 +32,7 @@ The unscramble problem is analogous: we're trying to recover spatial topology fr
 - **GPU Acceleration:** cupy (optional, for fast dissonance computation)
 - **Distance Metrics:** aeon (DTW pairwise distances)
 - **ML/Evaluation:** scikit-learn (precision-recall, ROC curves)
-- **GUI:** PyQt5 (main solver GUI)
+- **GUI:** PyQt5 (main solver GUI), pygame (BFS solver GUI)
 - **External Tools:** ffmpeg (via subprocess)
 - **Development:** Jupyter Notebooks for experimentation
 
@@ -42,6 +42,7 @@ The unscramble problem is analogous: we're trying to recover spatial topology fr
 unscramble_video/
 ├── tv_wall.py                         # TVWall class - core abstraction
 ├── gpu_utils.py                       # GPU acceleration utilities (CuPy)
+├── bfs_solver.py                      # BFS jigsaw-style solver (pygame GUI)
 ├── neighbor_dissonance_gui.py         # Interactive dissonance visualization
 ├── greedy_solver_gui_pyqt.py          # Interactive solver (PyQt5, cute pink theme)
 ├── compare_metrics.py                 # CLI tool comparing metrics + shuffled vs correct distributions + overlap analysis
@@ -64,6 +65,7 @@ pip install cupy-cuda12x       # Optional: GPU acceleration (adjust for your CUD
 # Run interactive GUIs
 python neighbor_dissonance_gui.py    # Visualize dissonance heatmaps
 python greedy_solver_gui_pyqt.py     # Run solver with animation (PyQt5, pink theme)
+python bfs_solver.py -v video.mkv -f 100  # BFS jigsaw solver with pygame GUI
 
 # Run CLI experiment
 python experiment_neighbor_dissonance.py -v video.mkv -n 20 -f 100
@@ -391,6 +393,86 @@ Interactive solver with real-time animation (PyQt5 with cute pink theme):
 - Tune parameters: top-K, max iterations, temperature, cooling rate
 - View progress charts and correctness maps
 - Cute pink UI theme with rounded corners, gradients, and hover effects
+
+## BFS Solver (`bfs_solver.py`)
+
+A jigsaw-puzzle-style solver that reconstructs the scrambled grid from scratch rather than swapping misplaced pixels. Instead of starting with the scrambled arrangement and fixing it, it builds an entirely new output grid by placing one pixel at a time using breadth-first search.
+
+### How It Works
+
+The solver operates in four phases:
+
+**Phase 0 — Precomputation:** Loads all color series into a flat array of shape `(H*W, 3, T)` and computes mean RGB per pixel for fast shortlisting.
+
+**Phase 1 — Seed Placement:** Places one pixel (random or specified) at the center of the output grid and expands the frontier to its cardinal/8-connected neighbors.
+
+**Phase 2 — Initial Neighborhood (Permutation Search):** For the seed's immediate neighbors, finds the C closest unplaced pixels by distance, then tries all permutations of K frontier slots from C candidates (if `P(C,K) ≤ permutation_limit`). Falls back to greedy assignment if the search space is too large.
+
+**Phase 3 — BFS Expansion:** Pops frontier positions from a priority queue (prioritized by number of already-placed neighbors). For each position:
+1. **Shortlist** — Finds top-S unplaced candidates by mean-RGB proximity to placed neighbors (fast coarse filter)
+2. **Evaluate** — Scores each shortlisted candidate by mean distance to all placed neighbors using the full time-series
+3. **Place** — The lowest-scoring candidate wins the position, and its neighbors join the frontier
+
+### Connectivity Modes
+
+- **`cardinal`** (default): 4-connected neighbors (up/down/left/right)
+- **`all`**: 8-connected neighbors (includes diagonals)
+
+### GPU Acceleration
+
+The `_find_closest_candidates()` method uses CuPy when available to compute distances from a reference series to all unplaced pixels in parallel on the GPU. Supported GPU metrics: euclidean, squared, manhattan, cosine. DTW falls back to CPU.
+
+### CLI Usage
+
+```bash
+python bfs_solver.py -v video.mkv -f 100 -s 1 --metric euclidean \
+    --scramble-seed 42 --shortlist 50 --neighbor-mode cardinal
+
+# Key parameters:
+#   --shortlist S          Coarse filter size per BFS step (default: 50)
+#   --initial-candidates C Candidates for seed neighborhood (default: 8)
+#   --permutation-limit N  Max perms before greedy fallback (default: 100000)
+#   --neighbor-mode        cardinal (4) or all (8) connectivity
+#   --metric               euclidean|squared|manhattan|cosine|dtw
+#   --no-gui               Run headless (no pygame window)
+#   --gui-scale            Display scale factor (default: 2)
+#   -o output.mp4          Save reconstructed video
+#   --save-frames          Save before/after PNGs
+```
+
+### Pygame GUI
+
+When run with pygame installed, displays a real-time visualization:
+- Output grid fills in pixel-by-pixel as the BFS progresses
+- Info panel shows placement count, accuracy, frontier size, speed, and metric
+- Press Escape or close window to stop early
+
+### BFSSolver Class
+
+```python
+from bfs_solver import BFSSolver
+from tv_wall import TVWall
+
+wall = TVWall("video.mkv", num_frames=100)
+wall.scramble(seed=42)
+
+solver = BFSSolver(
+    wall,
+    seed_position="random",      # or (x, y) tuple
+    neighbor_mode="cardinal",    # "cardinal" (4) or "all" (8)
+    distance_metric="euclidean", # euclidean|squared|manhattan|cosine|dtw
+    shortlist_size=50,           # coarse filter size S
+    initial_candidates=8,        # seed neighborhood candidates C
+    permutation_limit=100_000,   # max perms before greedy fallback
+)
+
+output_grid = solver.solve(callback=my_callback)  # (H, W, 2) array
+solver.apply_solution()  # writes result into wall's permutation
+
+stats = solver.get_stats()
+# {'total_pixels', 'placements', 'correct_placements', 'accuracy',
+#  'elapsed_time', 'placements_per_sec'}
+```
 
 ## CLI Experiment (`experiment_neighbor_dissonance.py`)
 
