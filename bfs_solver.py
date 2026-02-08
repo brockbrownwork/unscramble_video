@@ -15,10 +15,12 @@ import argparse
 import heapq
 import itertools
 import math
+import os
 import sys
 import time
 
 import numpy as np
+from PIL import Image
 from tqdm import tqdm
 
 from tv_wall import TVWall
@@ -53,7 +55,9 @@ class BFSSolver:
                  initial_candidates=8,
                  permutation_limit=100_000,
                  shortlist_size=50,
-                 rng_seed=None):
+                 rng_seed=None,
+                 snapshot_interval=10_000,
+                 snapshot_dir="bfs_output"):
         self.wall = wall
         self.seed_position = seed_position
         self.neighbor_mode = neighbor_mode
@@ -63,6 +67,8 @@ class BFSSolver:
         self.permutation_limit = permutation_limit
         self.shortlist_size = shortlist_size
         self.rng_seed = rng_seed
+        self.snapshot_interval = snapshot_interval
+        self.snapshot_dir = snapshot_dir
 
         self.H = wall.height
         self.W = wall.width
@@ -332,6 +338,9 @@ class BFSSolver:
                 self._expand_frontier(pos)
                 pbar.update(1)
 
+                if self.snapshot_interval and self.stats["placements"] % self.snapshot_interval == 0:
+                    self._save_snapshot(self.stats["placements"])
+
                 if callback is not None:
                     step_info = {
                         "placements": self.stats["placements"],
@@ -466,6 +475,25 @@ class BFSSolver:
         return result
 
     # ------------------------------------------------------------------
+    # Snapshots
+    # ------------------------------------------------------------------
+
+    def _save_snapshot(self, placements):
+        """Save current output grid state as a PNG."""
+        os.makedirs(self.snapshot_dir, exist_ok=True)
+        # Build image from placed pixels using frame 0 colors
+        img = np.full((self.H, self.W, 3), 40, dtype=np.uint8)  # dark gray for unplaced
+        placed_mask = self.placed_at >= 0
+        if placed_mask.any() and self.all_series is not None:
+            ys, xs = np.where(placed_mask)
+            pix_indices = self.placed_at[ys, xs]
+            src_xs = pix_indices % self.W
+            src_ys = pix_indices // self.W
+            img[ys, xs] = self.all_series[src_ys, src_xs, :, 0]
+        path = os.path.join(self.snapshot_dir, f"snapshot_{placements:07d}.png")
+        Image.fromarray(img).save(path)
+
+    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
@@ -508,6 +536,10 @@ class BFSSolver:
 
         elapsed = time.time() - start
         self.stats["elapsed_time"] = elapsed
+
+        # Save final snapshot
+        if self.snapshot_interval:
+            self._save_snapshot(self.stats["placements"])
 
         return self.output_grid
 
@@ -731,8 +763,15 @@ def parse_args():
 
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Save result video to this path")
-    parser.add_argument("--save-frames", action="store_true",
-                        help="Save before/after frame images")
+    parser.add_argument("--save-frames", action="store_true", default=True,
+                        help="Save before/after frame images (default: on)")
+    parser.add_argument("--no-save-frames", action="store_false", dest="save_frames",
+                        help="Disable saving before/after frame images")
+
+    parser.add_argument("--snapshot-interval", type=int, default=10_000,
+                        help="Save a progress PNG every N placements (0 to disable)")
+    parser.add_argument("--snapshot-dir", type=str, default="bfs_output",
+                        help="Directory to save progress snapshots")
 
     parser.add_argument("--no-gui", action="store_true",
                         help="Run without pygame visualization")
@@ -789,6 +828,8 @@ def main():
         permutation_limit=args.permutation_limit,
         shortlist_size=args.shortlist,
         rng_seed=args.rng_seed,
+        snapshot_interval=args.snapshot_interval or 0,
+        snapshot_dir=args.snapshot_dir,
     )
 
     # Solve
