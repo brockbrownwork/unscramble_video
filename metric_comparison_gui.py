@@ -12,10 +12,11 @@ import sys
 import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+import matplotlib.pyplot as plt
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QPushButton,
-    QHBoxLayout, QVBoxLayout, QSpinBox, QLineEdit,
+    QHBoxLayout, QVBoxLayout, QSpinBox, QLineEdit, QSlider,
     QFileDialog, QMessageBox, QGroupBox, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal
@@ -183,11 +184,32 @@ class MetricComparisonGUI(QMainWindow):
 
         topn_layout.addStretch(1)
 
+        plot_btn = QPushButton("Plot Avg Distance")
+        plot_btn.clicked.connect(self._plot_avg_distance)
+        topn_layout.addWidget(plot_btn)
+
         save_btn = QPushButton("Save PNG")
         save_btn.clicked.connect(self._save_figure)
         topn_layout.addWidget(save_btn)
 
         root_layout.addWidget(topn_group)
+
+        # --- Frame slider row ------------------------------------------------
+        frame_group = QGroupBox("Frame")
+        frame_layout = QHBoxLayout(frame_group)
+
+        self.frame_label = QLabel("Frame: 0")
+        self.frame_label.setMinimumWidth(80)
+        frame_layout.addWidget(self.frame_label)
+
+        self.frame_slider = QSlider(Qt.Horizontal)
+        self.frame_slider.setRange(0, 0)
+        self.frame_slider.setValue(0)
+        self.frame_slider.setEnabled(False)
+        self.frame_slider.valueChanged.connect(self._on_frame_changed)
+        frame_layout.addWidget(self.frame_slider, stretch=1)
+
+        root_layout.addWidget(frame_group)
 
         # --- Info bar --------------------------------------------------------
         self.info_label = QLabel("Click a pixel to compare metrics.")
@@ -271,6 +293,12 @@ class MetricComparisonGUI(QMainWindow):
         self.clicked_pixel = None
         self.flat_dists = None
         self.per_frame_dists = None
+
+        # Configure frame slider
+        self.frame_slider.setRange(0, self.wall.num_frames - 1)
+        self.frame_slider.setValue(0)
+        self.frame_slider.setEnabled(True)
+        self.frame_label.setText("Frame: 0")
 
         # Display bare frame in both panels
         self.left_panel.set_image(self.base_frame_image)
@@ -399,6 +427,64 @@ class MetricComparisonGUI(QMainWindow):
 
     def _on_topn_changed(self, value):
         self._update_overlay()
+
+    def _on_frame_changed(self, frame_idx):
+        if self.wall is None:
+            return
+        self.frame_label.setText(f"Frame: {frame_idx}")
+        self.base_frame_image = self.wall.get_frame_image(frame_idx)
+        if self.flat_dists is not None:
+            self._update_overlay()
+        else:
+            self.left_panel.set_image(self.base_frame_image)
+            self.right_panel.set_image(self.base_frame_image)
+
+    # -----------------------------------------------------------------------
+    # Plot
+    # -----------------------------------------------------------------------
+
+    def _cumulative_avg_spatial_dist(self, distances):
+        """Return array where element i = avg spatial dist for top-(i+1) pixels.
+
+        Sorts pixels by dissonance, then computes cumulative mean of their
+        spatial distances to the clicked pixel. O(N log N) from the sort.
+        """
+        cx, cy = self.clicked_pixel
+        flat = distances.ravel()
+        order = np.argsort(flat)
+        ys, xs = np.unravel_index(order, distances.shape)
+        spatial = np.sqrt((xs.astype(np.float64) - cx) ** 2 +
+                          (ys.astype(np.float64) - cy) ** 2)
+        cumavg = np.cumsum(spatial) / np.arange(1, len(spatial) + 1)
+        return cumavg
+
+    def _plot_avg_distance(self):
+        if self.flat_dists is None or self.clicked_pixel is None:
+            QMessageBox.warning(self, "Warning", "Click a pixel first.")
+            return
+
+        self.info_label.setText("Computing plot…")
+        QApplication.processEvents()
+
+        max_n = 10000
+        flat_cumavg = self._cumulative_avg_spatial_dist(self.flat_dists)[:max_n]
+        pf_cumavg = self._cumulative_avg_spatial_dist(self.per_frame_dists)[:max_n]
+        ns = np.arange(1, len(flat_cumavg) + 1)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(ns, flat_cumavg, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
+        ax.plot(ns, pf_cumavg, label="Sum-of-Per-Frame Euclidean", color="#8b4563", linewidth=1.5)
+        ax.set_xlabel("Top-N")
+        ax.set_ylabel("Avg Spatial Distance (px)")
+        ax.set_title(
+            f"Avg Spatial Distance vs Top-N — pixel ({self.clicked_pixel[0]}, {self.clicked_pixel[1]})"
+        )
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        plt.show()
+
+        self.info_label.setText("Plot shown.")
 
     # -----------------------------------------------------------------------
     # Save
