@@ -37,4 +37,33 @@ For example, with T=3 frames and two pixels A and B:
 
    And so, 18.7 is the **dissonance** between **visual field pixel A** and **visual field pixel B**.
 
-   
+### Flattened Euclidean vs Sum-of-Per-Frame Euclidean
+
+The metric described above is called **Flattened Euclidean** — it treats each pixel's entire color history as a single vector in 3×T dimensional space and computes one Euclidean distance.
+
+An alternative metric is **Sum-of-Per-Frame Euclidean**: instead of flattening all channels and frames into one vector, compute the Euclidean distance between the two pixels *independently for each frame*, then sum those per-frame distances.
+
+Using the same example (T=3):
+
+1. **Frame 1 distance:** √(5² + 5² + 0²) = √50 ≈ 7.07
+2. **Frame 2 distance:** √(10² + 5² + 5²) = √150 ≈ 12.25
+3. **Frame 3 distance:** √(10² + 5² + 5²) = √150 ≈ 12.25
+4. **Sum-of-Per-Frame distance:** 7.07 + 12.25 + 12.25 = **31.57**
+
+The key difference: Flattened Euclidean allows a large difference in one frame to be partially cancelled by small differences elsewhere (via the square root over the total sum of squares). Sum-of-Per-Frame treats each frame independently, so a single frame with a large color jump contributes its full weight — it penalizes *any* frame-level disagreement more heavily.
+
+### Inscribed Circle Coverage
+
+To evaluate how spatially coherent a metric's top-N selections are, we measure **inscribed circle coverage**. After selecting the top-N least dissonant pixels relative to a clicked pixel:
+
+1. Find the **furthest** top-N pixel from the clicked pixel (Euclidean distance in image space)
+2. Draw a circle of that radius centered on the clicked pixel
+3. Count how many of the top-N pixels fall within the circle vs the total pixels in the circle
+
+A high coverage percentage means the top-N pixels are tightly clustered around the clicked pixel in image space — the metric is spatially coherent. A low percentage means the top-N pixels are scattered with gaps, requiring a large circle to contain them all.
+
+### Average Spatial Distance
+
+Another way to compare metrics: for increasing values of top-N, plot the **average spatial distance** (in pixels) from the clicked pixel to the top-N least dissonant pixels. A better metric will have a lower average spatial distance at each N, meaning its closest matches (by color-series distance) are also physically closer in the image. This curve reveals how quickly spatial coherence degrades as we include more pixels.
+
+
