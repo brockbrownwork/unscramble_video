@@ -1,5 +1,6 @@
 """
-Metric Comparison GUI — Compare flattened Euclidean vs sum-of-per-frame Euclidean distance.
+Metric Comparison GUI — Compare flattened Euclidean vs sum-of-per-frame Euclidean
+vs temporal gradient distance.
 
 Click a pixel to see the N least dissonant pixels for each metric,
 overlaid as semi-transparent grey on the original frame.
@@ -118,7 +119,7 @@ class ClickableImagePanel(QLabel):
 class MetricComparisonGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Metric Comparison — Flattened vs Sum-of-Per-Frame Euclidean")
+        self.setWindowTitle("Metric Comparison — Flattened vs Per-Frame vs Temporal Gradient")
 
         # State
         self.wall = None
@@ -127,6 +128,7 @@ class MetricComparisonGUI(QMainWindow):
         self.clicked_pixel = None       # (x, y)
         self.flat_dists = None          # (H, W) float32
         self.per_frame_dists = None     # (H, W) float32
+        self.gradient_dists = None      # (H, W) float32
 
         self._setup_ui()
 
@@ -240,9 +242,27 @@ class MetricComparisonGUI(QMainWindow):
 
         panels_layout.addLayout(left_col)
 
-        # Right panel — Sum-of-Per-Frame Euclidean
+        # Middle panel — Sum-of-Per-Frame Euclidean
+        mid_col = QVBoxLayout()
+        mid_title = QLabel("Sum-of-Per-Frame Euclidean")
+        mid_title.setAlignment(Qt.AlignCenter)
+        mid_title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        mid_col.addWidget(mid_title)
+
+        self.mid_panel = ClickableImagePanel()
+        self.mid_panel.pixel_clicked.connect(self._on_pixel_clicked)
+        self.mid_panel.mouse_moved.connect(self._on_mouse_hover)
+        mid_col.addWidget(self.mid_panel)
+
+        self.mid_count_label = QLabel("")
+        self.mid_count_label.setAlignment(Qt.AlignCenter)
+        mid_col.addWidget(self.mid_count_label)
+
+        panels_layout.addLayout(mid_col)
+
+        # Right panel — Temporal Gradient Distance
         right_col = QVBoxLayout()
-        right_title = QLabel("Sum-of-Per-Frame Euclidean")
+        right_title = QLabel("Temporal Gradient Distance")
         right_title.setAlignment(Qt.AlignCenter)
         right_title.setStyleSheet("font-weight: bold; font-size: 13px;")
         right_col.addWidget(right_title)
@@ -293,6 +313,7 @@ class MetricComparisonGUI(QMainWindow):
         self.clicked_pixel = None
         self.flat_dists = None
         self.per_frame_dists = None
+        self.gradient_dists = None
 
         # Configure frame slider
         self.frame_slider.setRange(0, self.wall.num_frames - 1)
@@ -300,10 +321,12 @@ class MetricComparisonGUI(QMainWindow):
         self.frame_slider.setEnabled(True)
         self.frame_label.setText("Frame: 0")
 
-        # Display bare frame in both panels
+        # Display bare frame in all panels
         self.left_panel.set_image(self.base_frame_image)
+        self.mid_panel.set_image(self.base_frame_image)
         self.right_panel.set_image(self.base_frame_image)
         self.left_count_label.setText("")
+        self.mid_count_label.setText("")
         self.right_count_label.setText("")
 
         total = self.wall.width * self.wall.height
@@ -340,6 +363,19 @@ class MetricComparisonGUI(QMainWindow):
 
         del diff, sq_diff, per_frame_sq
 
+        # Metric 3 — Temporal Gradient Distance
+        # Instead of comparing raw colors, compare frame-to-frame changes.
+        # Neighboring pixels undergo correlated changes (same lighting, motion)
+        # even when their absolute colors differ (e.g. at object boundaries).
+        all_deltas = np.diff(self.all_series, axis=3)  # (H, W, 3, T-1)
+        clicked_deltas = all_deltas[py, px]  # (3, T-1)
+        delta_diff = all_deltas - clicked_deltas[np.newaxis, np.newaxis, :, :]
+        delta_sq = delta_diff ** 2
+        delta_per_frame_sq = np.sum(delta_sq, axis=2)  # (H, W, T-1)
+        self.gradient_dists = np.sum(np.sqrt(delta_per_frame_sq), axis=2)  # (H, W)
+
+        del all_deltas, clicked_deltas, delta_diff, delta_sq, delta_per_frame_sq
+
         # Adjust top-N max to total pixel count
         total = self.wall.width * self.wall.height
         self.topn_spin.setMaximum(total)
@@ -357,9 +393,10 @@ class MetricComparisonGUI(QMainWindow):
             return
         fd = self.flat_dists[py, px]
         pfd = self.per_frame_dists[py, px]
+        gd = self.gradient_dists[py, px] if self.gradient_dists is not None else 0.0
         self.info_label.setText(
             f"Hover ({px}, {py}) — "
-            f"Flat Euc: {fd:.1f}  |  Sum-Per-Frame Euc: {pfd:.1f}"
+            f"Flat: {fd:.1f}  |  Per-Frame: {pfd:.1f}  |  Gradient: {gd:.1f}"
         )
 
     # -----------------------------------------------------------------------
@@ -514,11 +551,18 @@ class MetricComparisonGUI(QMainWindow):
             self._format_label(self.flat_dists, top_n, total)
         )
 
-        right_img = self._create_overlay_image(self.per_frame_dists, top_n)
-        self.right_panel.set_image(right_img)
-        self.right_count_label.setText(
+        mid_img = self._create_overlay_image(self.per_frame_dists, top_n)
+        self.mid_panel.set_image(mid_img)
+        self.mid_count_label.setText(
             self._format_label(self.per_frame_dists, top_n, total)
         )
+
+        if self.gradient_dists is not None:
+            right_img = self._create_overlay_image(self.gradient_dists, top_n)
+            self.right_panel.set_image(right_img)
+            self.right_count_label.setText(
+                self._format_label(self.gradient_dists, top_n, total)
+            )
 
     def _on_topn_changed(self, value):
         self._update_overlay()
@@ -532,6 +576,7 @@ class MetricComparisonGUI(QMainWindow):
             self._update_overlay()
         else:
             self.left_panel.set_image(self.base_frame_image)
+            self.mid_panel.set_image(self.base_frame_image)
             self.right_panel.set_image(self.base_frame_image)
 
     # -----------------------------------------------------------------------
@@ -600,6 +645,11 @@ class MetricComparisonGUI(QMainWindow):
         pf_cumavg = self._cumulative_avg_spatial_dist(self.per_frame_dists)[:max_n]
         flat_quality = self._cumulative_circle_quality(self.flat_dists)[:max_n]
         pf_quality = self._cumulative_circle_quality(self.per_frame_dists)[:max_n]
+
+        # Temporal gradient metric
+        grad_cumavg = self._cumulative_avg_spatial_dist(self.gradient_dists)[:max_n]
+        grad_quality = self._cumulative_circle_quality(self.gradient_dists)[:max_n]
+
         ns = np.arange(1, len(flat_cumavg) + 1)
 
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 9), sharex=True)
@@ -607,6 +657,7 @@ class MetricComparisonGUI(QMainWindow):
         # Top: Avg spatial distance
         ax1.plot(ns, flat_cumavg, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
         ax1.plot(ns, pf_cumavg, label="Sum-of-Per-Frame Euclidean", color="#8b4563", linewidth=1.5)
+        ax1.plot(ns, grad_cumavg, label="Temporal Gradient", color="#2e86de", linewidth=1.5)
         ax1.set_ylabel("Avg Spatial Distance (px)")
         ax1.set_title(
             f"Pixel ({self.clicked_pixel[0]}, {self.clicked_pixel[1]}) — Metric Comparison"
@@ -617,6 +668,7 @@ class MetricComparisonGUI(QMainWindow):
         # Bottom: Circle quality
         ax2.plot(ns, flat_quality, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
         ax2.plot(ns, pf_quality, label="Sum-of-Per-Frame Euclidean", color="#8b4563", linewidth=1.5)
+        ax2.plot(ns, grad_quality, label="Temporal Gradient", color="#2e86de", linewidth=1.5)
         ax2.set_xlabel("Top-N")
         ax2.set_ylabel("Circle Quality")
         ax2.set_title("Circle Quality = √(compactness × fill rate) × 100")
@@ -646,28 +698,33 @@ class MetricComparisonGUI(QMainWindow):
 
         top_n = self.topn_spin.value()
         left = self._create_overlay_image(self.flat_dists, top_n)
-        right = self._create_overlay_image(self.per_frame_dists, top_n)
+        mid = self._create_overlay_image(self.per_frame_dists, top_n)
+        right = self._create_overlay_image(self.gradient_dists, top_n)
 
         s = 2.0  # fixed scale for saved image
-        lw = int(left.width * s)
-        lh = int(left.height * s)
-        left_s = left.resize((lw, lh), Image.Resampling.NEAREST)
-        right_s = right.resize((lw, lh), Image.Resampling.NEAREST)
+        pw = int(left.width * s)
+        ph = int(left.height * s)
+        left_s = left.resize((pw, ph), Image.Resampling.NEAREST)
+        mid_s = mid.resize((pw, ph), Image.Resampling.NEAREST)
+        right_s = right.resize((pw, ph), Image.Resampling.NEAREST)
 
         gap = 20
         title_h = 30
-        combined = Image.new("RGB", (lw * 2 + gap, lh + title_h), (255, 240, 245))
+        combined = Image.new("RGB", (pw * 3 + gap * 2, ph + title_h), (255, 240, 245))
         combined.paste(left_s, (0, title_h))
-        combined.paste(right_s, (lw + gap, title_h))
+        combined.paste(mid_s, (pw + gap, title_h))
+        combined.paste(right_s, (pw * 2 + gap * 2, title_h))
 
         draw = ImageDraw.Draw(combined)
         try:
             font = ImageFont.truetype("arial.ttf", 16)
         except OSError:
             font = ImageFont.load_default()
-        draw.text((lw // 2, 5), "Flattened Euclidean",
+        draw.text((pw // 2, 5), "Flattened Euclidean",
                   fill=(139, 69, 99), anchor="mt", font=font)
-        draw.text((lw + gap + lw // 2, 5), "Sum-of-Per-Frame Euclidean",
+        draw.text((pw + gap + pw // 2, 5), "Sum-of-Per-Frame Euclidean",
+                  fill=(139, 69, 99), anchor="mt", font=font)
+        draw.text((pw * 2 + gap * 2 + pw // 2, 5), "Temporal Gradient",
                   fill=(139, 69, 99), anchor="mt", font=font)
 
         combined.save(filepath)
@@ -730,7 +787,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(get_pink_stylesheet())
     window = MetricComparisonGUI()
-    window.resize(1400, 800)
+    window.resize(1800, 800)
     window.show()
     sys.exit(app.exec_())
 
