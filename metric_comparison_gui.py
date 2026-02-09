@@ -1,0 +1,468 @@
+"""
+Metric Comparison GUI — Compare flattened Euclidean vs sum-of-per-frame Euclidean distance.
+
+Click a pixel to see which other pixels fall within a dissonance threshold for each metric,
+overlaid as semi-transparent grey on the original frame.
+
+Usage:
+    python metric_comparison_gui.py
+"""
+
+import sys
+import os
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
+
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QLabel, QPushButton,
+    QHBoxLayout, QVBoxLayout, QSlider, QSpinBox, QLineEdit,
+    QFileDialog, QMessageBox, QGroupBox, QSizePolicy
+)
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QImage, QPixmap
+
+from tv_wall import TVWall
+
+
+# ---------------------------------------------------------------------------
+# Clickable image panel
+# ---------------------------------------------------------------------------
+
+class ClickableImagePanel(QLabel):
+    """QLabel that emits pixel coordinates on click and hover."""
+
+    pixel_clicked = pyqtSignal(int, int)
+    mouse_moved = pyqtSignal(int, int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMouseTracking(True)
+        self.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.setStyleSheet(
+            "background-color: #f8d7e3; border: 2px solid #ffb6c1; border-radius: 8px;"
+        )
+        self.setMinimumSize(400, 300)
+        self.display_scale = 1.0
+        self.wall_width = 0
+        self.wall_height = 0
+        self._image_data = None  # prevent GC of QImage buffer
+
+    def set_image(self, pil_image, scale):
+        self.display_scale = scale
+        self.wall_width = pil_image.width
+        self.wall_height = pil_image.height
+
+        scaled = pil_image.resize(
+            (int(pil_image.width * scale), int(pil_image.height * scale)),
+            Image.Resampling.NEAREST,
+        )
+
+        rgb = scaled.convert("RGB")
+        self._image_data = rgb.tobytes("raw", "RGB")
+        qimg = QImage(
+            self._image_data, rgb.width, rgb.height,
+            rgb.width * 3, QImage.Format_RGB888,
+        )
+        self.setPixmap(QPixmap.fromImage(qimg))
+
+    def _to_wall_coords(self, event):
+        px = int(event.x() / self.display_scale)
+        py = int(event.y() / self.display_scale)
+        if 0 <= px < self.wall_width and 0 <= py < self.wall_height:
+            return px, py
+        return None
+
+    def mousePressEvent(self, event):
+        coords = self._to_wall_coords(event)
+        if coords:
+            self.pixel_clicked.emit(*coords)
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        coords = self._to_wall_coords(event)
+        if coords:
+            self.mouse_moved.emit(*coords)
+        super().mouseMoveEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# Main window
+# ---------------------------------------------------------------------------
+
+class MetricComparisonGUI(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Metric Comparison — Flattened vs Sum-of-Per-Frame Euclidean")
+
+        # State
+        self.wall = None
+        self.all_series = None          # (H, W, 3, T) float32
+        self.base_frame_image = None    # PIL Image
+        self.clicked_pixel = None       # (x, y)
+        self.flat_dists = None          # (H, W) float32
+        self.per_frame_dists = None     # (H, W) float32
+        self.display_scale = 2.0
+
+        self._setup_ui()
+
+    # -----------------------------------------------------------------------
+    # UI setup
+    # -----------------------------------------------------------------------
+
+    def _setup_ui(self):
+        central = QWidget()
+        self.setCentralWidget(central)
+        root_layout = QVBoxLayout(central)
+        root_layout.setSpacing(8)
+
+        # --- Controls row ---------------------------------------------------
+        ctrl_group = QGroupBox("Video")
+        ctrl_layout = QHBoxLayout(ctrl_group)
+
+        self.path_edit = QLineEdit()
+        self.path_edit.setPlaceholderText("Path to video file…")
+        ctrl_layout.addWidget(self.path_edit, stretch=1)
+
+        browse_btn = QPushButton("Browse…")
+        browse_btn.clicked.connect(self._browse_video)
+        ctrl_layout.addWidget(browse_btn)
+
+        ctrl_layout.addWidget(QLabel("Frames:"))
+        self.frames_spin = QSpinBox()
+        self.frames_spin.setRange(10, 10000)
+        self.frames_spin.setValue(100)
+        ctrl_layout.addWidget(self.frames_spin)
+
+        ctrl_layout.addWidget(QLabel("Stride:"))
+        self.stride_spin = QSpinBox()
+        self.stride_spin.setRange(1, 100)
+        self.stride_spin.setValue(1)
+        ctrl_layout.addWidget(self.stride_spin)
+
+        load_btn = QPushButton("Load Video")
+        load_btn.clicked.connect(self._load_video)
+        ctrl_layout.addWidget(load_btn)
+
+        root_layout.addWidget(ctrl_group)
+
+        # --- Threshold row ---------------------------------------------------
+        thresh_group = QGroupBox("Threshold")
+        thresh_layout = QHBoxLayout(thresh_group)
+
+        thresh_layout.addWidget(QLabel("Threshold:"))
+
+        self.threshold_slider = QSlider(Qt.Horizontal)
+        self.threshold_slider.setRange(0, 10000)
+        self.threshold_slider.setValue(500)
+        self.threshold_slider.valueChanged.connect(self._on_threshold_changed)
+        thresh_layout.addWidget(self.threshold_slider, stretch=1)
+
+        self.threshold_label = QLabel("500")
+        self.threshold_label.setMinimumWidth(60)
+        thresh_layout.addWidget(self.threshold_label)
+
+        save_btn = QPushButton("Save PNG")
+        save_btn.clicked.connect(self._save_figure)
+        thresh_layout.addWidget(save_btn)
+
+        root_layout.addWidget(thresh_group)
+
+        # --- Info bar --------------------------------------------------------
+        self.info_label = QLabel("Click a pixel to compare metrics.")
+        self.info_label.setStyleSheet(
+            "padding: 4px 8px; font-style: italic;"
+        )
+        root_layout.addWidget(self.info_label)
+
+        # --- Image panels ----------------------------------------------------
+        panels_layout = QHBoxLayout()
+        panels_layout.setSpacing(12)
+
+        # Left panel — Flattened Euclidean
+        left_col = QVBoxLayout()
+        left_title = QLabel("Flattened Euclidean")
+        left_title.setAlignment(Qt.AlignCenter)
+        left_title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        left_col.addWidget(left_title)
+
+        self.left_panel = ClickableImagePanel()
+        self.left_panel.pixel_clicked.connect(self._on_pixel_clicked)
+        self.left_panel.mouse_moved.connect(self._on_mouse_hover)
+        left_col.addWidget(self.left_panel)
+
+        self.left_count_label = QLabel("")
+        self.left_count_label.setAlignment(Qt.AlignCenter)
+        left_col.addWidget(self.left_count_label)
+
+        panels_layout.addLayout(left_col)
+
+        # Right panel — Sum-of-Per-Frame Euclidean
+        right_col = QVBoxLayout()
+        right_title = QLabel("Sum-of-Per-Frame Euclidean")
+        right_title.setAlignment(Qt.AlignCenter)
+        right_title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        right_col.addWidget(right_title)
+
+        self.right_panel = ClickableImagePanel()
+        self.right_panel.pixel_clicked.connect(self._on_pixel_clicked)
+        self.right_panel.mouse_moved.connect(self._on_mouse_hover)
+        right_col.addWidget(self.right_panel)
+
+        self.right_count_label = QLabel("")
+        self.right_count_label.setAlignment(Qt.AlignCenter)
+        right_col.addWidget(self.right_count_label)
+
+        panels_layout.addLayout(right_col)
+
+        root_layout.addLayout(panels_layout, stretch=1)
+
+    # -----------------------------------------------------------------------
+    # Video loading
+    # -----------------------------------------------------------------------
+
+    def _browse_video(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select video", "",
+            "Video files (*.mkv *.mp4 *.avi *.mov);;All files (*.*)",
+        )
+        if path:
+            self.path_edit.setText(path)
+
+    def _load_video(self):
+        path = self.path_edit.text().strip()
+        if not path or not os.path.isfile(path):
+            QMessageBox.warning(self, "Error", "Please select a valid video file.")
+            return
+
+        self.info_label.setText("Loading video…")
+        QApplication.processEvents()
+
+        self.wall = TVWall(
+            path,
+            num_frames=self.frames_spin.value(),
+            stride=self.stride_spin.value(),
+        )
+        self.all_series = self.wall.get_all_series(force_cpu=True)  # (H, W, 3, T)
+        self.base_frame_image = self.wall.get_frame_image(0)
+
+        # Reset click state
+        self.clicked_pixel = None
+        self.flat_dists = None
+        self.per_frame_dists = None
+
+        # Display bare frame in both panels
+        self.left_panel.set_image(self.base_frame_image, self.display_scale)
+        self.right_panel.set_image(self.base_frame_image, self.display_scale)
+        self.left_count_label.setText("")
+        self.right_count_label.setText("")
+
+        total = self.wall.width * self.wall.height
+        self.info_label.setText(
+            f"Loaded {self.wall.width}×{self.wall.height} · "
+            f"{self.wall.num_frames} frames · {total:,} pixels. Click a pixel!"
+        )
+
+    # -----------------------------------------------------------------------
+    # Click / hover
+    # -----------------------------------------------------------------------
+
+    def _on_pixel_clicked(self, px, py):
+        if self.all_series is None:
+            return
+
+        self.clicked_pixel = (px, py)
+        self.info_label.setText(f"Computing distances from ({px}, {py})…")
+        QApplication.processEvents()
+
+        # clicked series shape: (3, T)
+        clicked_series = self.all_series[py, px]
+
+        # diff shape: (H, W, 3, T)
+        diff = self.all_series - clicked_series[np.newaxis, np.newaxis, :, :]
+        sq_diff = diff ** 2
+
+        # Metric 1 — Flattened Euclidean
+        self.flat_dists = np.sqrt(np.sum(sq_diff, axis=(2, 3)))  # (H, W)
+
+        # Metric 2 — Sum-of-Per-Frame Euclidean
+        per_frame_sq = np.sum(sq_diff, axis=2)  # (H, W, T)
+        self.per_frame_dists = np.sum(np.sqrt(per_frame_sq), axis=2)  # (H, W)
+
+        del diff, sq_diff, per_frame_sq
+
+        # Adjust slider range to actual data
+        max_flat = float(self.flat_dists.max())
+        max_pf = float(self.per_frame_dists.max())
+        max_dist = max(max_flat, max_pf)
+        self.threshold_slider.setMaximum(int(max_dist) + 100)
+
+        self.info_label.setText(
+            f"Clicked ({px}, {py}) — "
+            f"Flat max: {max_flat:.0f}, Per-frame max: {max_pf:.0f}"
+        )
+
+        self._update_overlay()
+
+    def _on_mouse_hover(self, px, py):
+        if self.flat_dists is None or self.per_frame_dists is None:
+            return
+        fd = self.flat_dists[py, px]
+        pfd = self.per_frame_dists[py, px]
+        self.info_label.setText(
+            f"Hover ({px}, {py}) — "
+            f"Flat Euc: {fd:.1f}  |  Sum-Per-Frame Euc: {pfd:.1f}"
+        )
+
+    # -----------------------------------------------------------------------
+    # Overlay rendering
+    # -----------------------------------------------------------------------
+
+    def _create_overlay_image(self, distances, threshold):
+        """Return PIL Image with semi-transparent grey on pixels within threshold."""
+        base = np.array(self.base_frame_image).astype(np.float32)  # (H, W, 3)
+        mask = distances <= threshold  # (H, W)
+
+        alpha = 0.5
+        grey = np.array([200, 200, 200], dtype=np.float32)
+        base[mask] = base[mask] * (1.0 - alpha) + grey * alpha
+
+        # Mark clicked pixel with a cyan cross
+        if self.clicked_pixel is not None:
+            cx, cy = self.clicked_pixel
+            for dx, dy in [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = cx + dx, cy + dy
+                if 0 <= nx < self.wall.width and 0 <= ny < self.wall.height:
+                    base[ny, nx] = [0, 255, 255]
+
+        return Image.fromarray(base.astype(np.uint8), "RGB")
+
+    def _update_overlay(self):
+        if self.flat_dists is None:
+            return
+
+        threshold = self.threshold_slider.value()
+        total = self.wall.width * self.wall.height
+
+        left_img = self._create_overlay_image(self.flat_dists, threshold)
+        self.left_panel.set_image(left_img, self.display_scale)
+        n_left = int(np.sum(self.flat_dists <= threshold))
+        self.left_count_label.setText(f"Within threshold: {n_left:,} / {total:,}")
+
+        right_img = self._create_overlay_image(self.per_frame_dists, threshold)
+        self.right_panel.set_image(right_img, self.display_scale)
+        n_right = int(np.sum(self.per_frame_dists <= threshold))
+        self.right_count_label.setText(f"Within threshold: {n_right:,} / {total:,}")
+
+    def _on_threshold_changed(self, value):
+        self.threshold_label.setText(str(value))
+        self._update_overlay()
+
+    # -----------------------------------------------------------------------
+    # Save
+    # -----------------------------------------------------------------------
+
+    def _save_figure(self):
+        if self.flat_dists is None:
+            QMessageBox.warning(self, "Warning", "Click a pixel first.")
+            return
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Save Figure", "metric_comparison.png",
+            "PNG files (*.png);;All files (*.*)",
+        )
+        if not filepath:
+            return
+
+        threshold = self.threshold_slider.value()
+        left = self._create_overlay_image(self.flat_dists, threshold)
+        right = self._create_overlay_image(self.per_frame_dists, threshold)
+
+        s = self.display_scale
+        lw = int(left.width * s)
+        lh = int(left.height * s)
+        left_s = left.resize((lw, lh), Image.Resampling.NEAREST)
+        right_s = right.resize((lw, lh), Image.Resampling.NEAREST)
+
+        gap = 20
+        title_h = 30
+        combined = Image.new("RGB", (lw * 2 + gap, lh + title_h), (255, 240, 245))
+        combined.paste(left_s, (0, title_h))
+        combined.paste(right_s, (lw + gap, title_h))
+
+        draw = ImageDraw.Draw(combined)
+        try:
+            font = ImageFont.truetype("arial.ttf", 16)
+        except OSError:
+            font = ImageFont.load_default()
+        draw.text((lw // 2, 5), "Flattened Euclidean",
+                  fill=(139, 69, 99), anchor="mt", font=font)
+        draw.text((lw + gap + lw // 2, 5), "Sum-of-Per-Frame Euclidean",
+                  fill=(139, 69, 99), anchor="mt", font=font)
+
+        combined.save(filepath)
+        self.info_label.setText(f"Saved: {filepath}")
+
+
+# ---------------------------------------------------------------------------
+# Pink theme (from greedy_solver_gui_pyqt.py)
+# ---------------------------------------------------------------------------
+
+def get_pink_stylesheet():
+    return """
+    QMainWindow { background-color: #fff0f5; }
+    QWidget { background-color: #fff0f5; color: #8b4563;
+              font-family: 'Segoe UI', Arial, sans-serif; }
+    QGroupBox { background-color: #ffe4ec; border: 2px solid #ffb6c1;
+                border-radius: 10px; margin-top: 12px; padding-top: 10px;
+                font-weight: bold; color: #d63384; }
+    QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left;
+                       padding: 2px 10px; background-color: #ffb6c1;
+                       border-radius: 5px; color: #fff; }
+    QPushButton { background-color: #ff85a2; color: white; border: none;
+                  border-radius: 8px; padding: 6px 12px; font-weight: bold;
+                  min-height: 24px; }
+    QPushButton:hover { background-color: #ff6b8a; }
+    QPushButton:pressed { background-color: #e55a7b; }
+    QPushButton:disabled { background-color: #ddb8c4; color: #f5e6ea; }
+    QLineEdit { background-color: #fff; border: 2px solid #ffb6c1;
+                border-radius: 6px; padding: 4px 8px; color: #8b4563;
+                selection-background-color: #ff85a2; }
+    QLineEdit:focus { border: 2px solid #ff85a2; }
+    QLabel { background-color: transparent; color: #8b4563; }
+    QSpinBox { background-color: #fff; border: 2px solid #ffb6c1;
+               border-radius: 6px; padding: 4px 8px; color: #8b4563; }
+    QSpinBox:focus { border: 2px solid #ff85a2; }
+    QSlider::groove:horizontal { height: 8px; background-color: #ffe4ec;
+                                  border-radius: 4px; border: 1px solid #ffb6c1; }
+    QSlider::handle:horizontal { background-color: #ff85a2; width: 18px;
+                                  height: 18px; margin: -6px 0; border-radius: 9px;
+                                  border: 2px solid #fff; }
+    QSlider::handle:horizontal:hover { background-color: #ff6b8a; }
+    QSlider::sub-page:horizontal { background-color: #ffb6c1; border-radius: 4px; }
+    QScrollBar:vertical { background-color: #ffe4ec; width: 12px; border-radius: 6px; }
+    QScrollBar::handle:vertical { background-color: #ffb6c1; border-radius: 5px;
+                                   min-height: 20px; }
+    QScrollBar::handle:vertical:hover { background-color: #ff85a2; }
+    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+    QMessageBox { background-color: #fff0f5; }
+    QMessageBox QLabel { color: #8b4563; }
+    QMessageBox QPushButton { min-width: 80px; }
+    QFileDialog { background-color: #fff0f5; }
+    """
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+def main():
+    app = QApplication(sys.argv)
+    app.setStyleSheet(get_pink_stylesheet())
+    window = MetricComparisonGUI()
+    window.resize(1400, 800)
+    window.show()
+    sys.exit(app.exec_())
+
+
+if __name__ == "__main__":
+    main()
