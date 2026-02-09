@@ -15,7 +15,15 @@
       "Bash(wc:*)",
       "Bash(nvidia-smi:*)",
       "Bash(nvcc:*)",
-      "Bash(start \"\" \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\\\\discord_post.md\")"
+      "Bash(start \"\" \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\\\\discord_post.md\")",
+      "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" status)",
+      "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" diff)",
+      "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" log --oneline -5)",
+      "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" add bfs_solver.py)",
+      "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" commit -m \"$\\(cat <<''EOF''\nfeat: disable BFS shortlisting by default\n\nShortlist size now defaults to 0 \\(off\\), so all unplaced candidates get\nfull time-series evaluation. Can be re-enabled with --shortlist N.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" push)",
+      "Bash(ls:*)",
+      "Bash(python3:*)"
     ]
   }
 }

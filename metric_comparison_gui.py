@@ -366,16 +366,54 @@ class MetricComparisonGUI(QMainWindow):
     # Overlay rendering
     # -----------------------------------------------------------------------
 
+    def _get_topn_mask(self, distances, top_n):
+        """Return boolean mask (H, W) of the top-N least dissonant pixels."""
+        flat = distances.ravel()
+        if top_n >= flat.size:
+            return np.ones(distances.shape, dtype=bool)
+        nth_dist = np.partition(flat, top_n)[top_n]
+        return distances <= nth_dist
+
+    def _compute_circle_coverage(self, distances, top_n):
+        """Compute inscribed circle coverage for a metric.
+
+        Returns (radius, circle_pixel_count, topn_in_circle, coverage_pct)
+        or None if no clicked pixel.
+        """
+        if self.clicked_pixel is None:
+            return None
+        cx, cy = self.clicked_pixel
+        H, W = distances.shape
+        mask = self._get_topn_mask(distances, top_n)
+
+        # Find the furthest top-N pixel from the clicked pixel
+        ys, xs = np.where(mask)
+        if len(xs) == 0:
+            return None
+        spatial_dists = np.sqrt((xs.astype(np.float64) - cx) ** 2 +
+                                (ys.astype(np.float64) - cy) ** 2)
+        radius = float(spatial_dists.max())
+
+        if radius < 0.5:
+            return (radius, 1, 1, 100.0)
+
+        # Build distance map from clicked pixel to every pixel in the grid
+        yy, xx = np.mgrid[0:H, 0:W]
+        dist_from_center = np.sqrt((xx.astype(np.float64) - cx) ** 2 +
+                                   (yy.astype(np.float64) - cy) ** 2)
+        circle_mask = dist_from_center <= radius
+
+        circle_pixel_count = int(circle_mask.sum())
+        topn_in_circle = int((mask & circle_mask).sum())
+        coverage_pct = (topn_in_circle / circle_pixel_count * 100.0
+                        if circle_pixel_count > 0 else 0.0)
+
+        return (radius, circle_pixel_count, topn_in_circle, coverage_pct)
+
     def _create_overlay_image(self, distances, top_n):
         """Return PIL Image with semi-transparent grey on the top-N least dissonant pixels."""
         base = np.array(self.base_frame_image).astype(np.float32)  # (H, W, 3)
-        flat = distances.ravel()
-        # Find the distance threshold that includes exactly top_n pixels
-        if top_n >= flat.size:
-            mask = np.ones(distances.shape, dtype=bool)
-        else:
-            nth_dist = np.partition(flat, top_n)[top_n]
-            mask = distances <= nth_dist
+        mask = self._get_topn_mask(distances, top_n)
 
         alpha = 0.5
         grey = np.array([200, 200, 200], dtype=np.float32)
@@ -389,7 +427,22 @@ class MetricComparisonGUI(QMainWindow):
                 if 0 <= nx < self.wall.width and 0 <= ny < self.wall.height:
                     base[ny, nx] = [0, 255, 255]
 
-        return Image.fromarray(base.astype(np.uint8), "RGB")
+        img = Image.fromarray(base.astype(np.uint8), "RGB")
+
+        # Draw inscribed circle outline
+        if self.clicked_pixel is not None:
+            info = self._compute_circle_coverage(distances, top_n)
+            if info is not None:
+                radius = info[0]
+                if radius >= 0.5:
+                    draw = ImageDraw.Draw(img)
+                    x0 = cx - radius
+                    y0 = cy - radius
+                    x1 = cx + radius
+                    y1 = cy + radius
+                    draw.ellipse([x0, y0, x1, y1], outline=(0, 255, 255), width=1)
+
+        return img
 
     def _avg_spatial_distance(self, distances, top_n):
         """Average Euclidean pixel distance from clicked pixel to the top-N closest."""
@@ -404,6 +457,18 @@ class MetricComparisonGUI(QMainWindow):
         spatial_dists = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2)
         return float(spatial_dists.mean())
 
+    def _format_label(self, distances, top_n, total):
+        """Build the label string including avg distance and circle coverage."""
+        avg = self._avg_spatial_distance(distances, top_n)
+        text = f"Top {top_n:,} / {total:,}  |  Avg dist: {avg:.1f} px"
+
+        info = self._compute_circle_coverage(distances, top_n)
+        if info is not None:
+            radius, circle_px, topn_in, pct = info
+            text += (f"  |  Circle r={radius:.1f}: "
+                     f"{topn_in:,}/{circle_px:,} = {pct:.1f}%")
+        return text
+
     def _update_overlay(self):
         if self.flat_dists is None:
             return
@@ -413,16 +478,14 @@ class MetricComparisonGUI(QMainWindow):
 
         left_img = self._create_overlay_image(self.flat_dists, top_n)
         self.left_panel.set_image(left_img)
-        avg_flat = self._avg_spatial_distance(self.flat_dists, top_n)
         self.left_count_label.setText(
-            f"Top {top_n:,} / {total:,}  |  Avg distance: {avg_flat:.1f} px"
+            self._format_label(self.flat_dists, top_n, total)
         )
 
         right_img = self._create_overlay_image(self.per_frame_dists, top_n)
         self.right_panel.set_image(right_img)
-        avg_pf = self._avg_spatial_distance(self.per_frame_dists, top_n)
         self.right_count_label.setText(
-            f"Top {top_n:,} / {total:,}  |  Avg distance: {avg_pf:.1f} px"
+            self._format_label(self.per_frame_dists, top_n, total)
         )
 
     def _on_topn_changed(self, value):
