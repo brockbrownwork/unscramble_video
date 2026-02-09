@@ -1,7 +1,7 @@
 """
 Metric Comparison GUI — Compare flattened Euclidean vs sum-of-per-frame Euclidean distance.
 
-Click a pixel to see which other pixels fall within a dissonance threshold for each metric,
+Click a pixel to see the N least dissonant pixels for each metric,
 overlaid as semi-transparent grey on the original frame.
 
 Usage:
@@ -15,8 +15,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QPushButton,
-    QHBoxLayout, QVBoxLayout, QSlider, QSpinBox, QLineEdit,
-    QFileDialog, QMessageBox, QGroupBox, QSizePolicy
+    QHBoxLayout, QVBoxLayout, QSpinBox, QLineEdit,
+    QFileDialog, QMessageBox, QGroupBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
@@ -145,27 +145,25 @@ class MetricComparisonGUI(QMainWindow):
 
         root_layout.addWidget(ctrl_group)
 
-        # --- Threshold row ---------------------------------------------------
-        thresh_group = QGroupBox("Threshold")
-        thresh_layout = QHBoxLayout(thresh_group)
+        # --- Top-N row -------------------------------------------------------
+        topn_group = QGroupBox("Selection")
+        topn_layout = QHBoxLayout(topn_group)
 
-        thresh_layout.addWidget(QLabel("Threshold:"))
+        topn_layout.addWidget(QLabel("Top-N least dissonant:"))
 
-        self.threshold_slider = QSlider(Qt.Horizontal)
-        self.threshold_slider.setRange(0, 10000)
-        self.threshold_slider.setValue(500)
-        self.threshold_slider.valueChanged.connect(self._on_threshold_changed)
-        thresh_layout.addWidget(self.threshold_slider, stretch=1)
+        self.topn_spin = QSpinBox()
+        self.topn_spin.setRange(1, 100000)
+        self.topn_spin.setValue(100)
+        self.topn_spin.valueChanged.connect(self._on_topn_changed)
+        topn_layout.addWidget(self.topn_spin)
 
-        self.threshold_label = QLabel("500")
-        self.threshold_label.setMinimumWidth(60)
-        thresh_layout.addWidget(self.threshold_label)
+        topn_layout.addStretch(1)
 
         save_btn = QPushButton("Save PNG")
         save_btn.clicked.connect(self._save_figure)
-        thresh_layout.addWidget(save_btn)
+        topn_layout.addWidget(save_btn)
 
-        root_layout.addWidget(thresh_group)
+        root_layout.addWidget(topn_group)
 
         # --- Info bar --------------------------------------------------------
         self.info_label = QLabel("Click a pixel to compare metrics.")
@@ -290,15 +288,14 @@ class MetricComparisonGUI(QMainWindow):
 
         del diff, sq_diff, per_frame_sq
 
-        # Adjust slider range to actual data
-        max_flat = float(self.flat_dists.max())
-        max_pf = float(self.per_frame_dists.max())
-        max_dist = max(max_flat, max_pf)
-        self.threshold_slider.setMaximum(int(max_dist) + 100)
+        # Adjust top-N max to total pixel count
+        total = self.wall.width * self.wall.height
+        self.topn_spin.setMaximum(total)
 
         self.info_label.setText(
             f"Clicked ({px}, {py}) — "
-            f"Flat max: {max_flat:.0f}, Per-frame max: {max_pf:.0f}"
+            f"Flat max: {float(self.flat_dists.max()):.0f}, "
+            f"Per-frame max: {float(self.per_frame_dists.max()):.0f}"
         )
 
         self._update_overlay()
@@ -317,10 +314,16 @@ class MetricComparisonGUI(QMainWindow):
     # Overlay rendering
     # -----------------------------------------------------------------------
 
-    def _create_overlay_image(self, distances, threshold):
-        """Return PIL Image with semi-transparent grey on pixels within threshold."""
+    def _create_overlay_image(self, distances, top_n):
+        """Return PIL Image with semi-transparent grey on the top-N least dissonant pixels."""
         base = np.array(self.base_frame_image).astype(np.float32)  # (H, W, 3)
-        mask = distances <= threshold  # (H, W)
+        flat = distances.ravel()
+        # Find the distance threshold that includes exactly top_n pixels
+        if top_n >= flat.size:
+            mask = np.ones(distances.shape, dtype=bool)
+        else:
+            nth_dist = np.partition(flat, top_n)[top_n]
+            mask = distances <= nth_dist
 
         alpha = 0.5
         grey = np.array([200, 200, 200], dtype=np.float32)
@@ -340,21 +343,18 @@ class MetricComparisonGUI(QMainWindow):
         if self.flat_dists is None:
             return
 
-        threshold = self.threshold_slider.value()
+        top_n = self.topn_spin.value()
         total = self.wall.width * self.wall.height
 
-        left_img = self._create_overlay_image(self.flat_dists, threshold)
+        left_img = self._create_overlay_image(self.flat_dists, top_n)
         self.left_panel.set_image(left_img, self.display_scale)
-        n_left = int(np.sum(self.flat_dists <= threshold))
-        self.left_count_label.setText(f"Within threshold: {n_left:,} / {total:,}")
+        self.left_count_label.setText(f"Showing top {top_n:,} / {total:,}")
 
-        right_img = self._create_overlay_image(self.per_frame_dists, threshold)
+        right_img = self._create_overlay_image(self.per_frame_dists, top_n)
         self.right_panel.set_image(right_img, self.display_scale)
-        n_right = int(np.sum(self.per_frame_dists <= threshold))
-        self.right_count_label.setText(f"Within threshold: {n_right:,} / {total:,}")
+        self.right_count_label.setText(f"Showing top {top_n:,} / {total:,}")
 
-    def _on_threshold_changed(self, value):
-        self.threshold_label.setText(str(value))
+    def _on_topn_changed(self, value):
         self._update_overlay()
 
     # -----------------------------------------------------------------------
@@ -373,9 +373,9 @@ class MetricComparisonGUI(QMainWindow):
         if not filepath:
             return
 
-        threshold = self.threshold_slider.value()
-        left = self._create_overlay_image(self.flat_dists, threshold)
-        right = self._create_overlay_image(self.per_frame_dists, threshold)
+        top_n = self.topn_spin.value()
+        left = self._create_overlay_image(self.flat_dists, top_n)
+        right = self._create_overlay_image(self.per_frame_dists, top_n)
 
         s = self.display_scale
         lw = int(left.width * s)
