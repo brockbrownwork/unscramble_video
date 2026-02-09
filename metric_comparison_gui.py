@@ -363,6 +363,19 @@ class MetricComparisonGUI(QMainWindow):
 
         return Image.fromarray(base.astype(np.uint8), "RGB")
 
+    def _avg_spatial_distance(self, distances, top_n):
+        """Average Euclidean pixel distance from clicked pixel to the top-N closest."""
+        if self.clicked_pixel is None:
+            return 0.0
+        cx, cy = self.clicked_pixel
+        flat = distances.ravel()
+        n = min(top_n, flat.size)
+        # Indices of the top-N least dissonant pixels (flat index)
+        top_indices = np.argpartition(flat, n)[:n]
+        ys, xs = np.unravel_index(top_indices, distances.shape)
+        spatial_dists = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2)
+        return float(spatial_dists.mean())
+
     def _update_overlay(self):
         if self.flat_dists is None:
             return
@@ -372,11 +385,17 @@ class MetricComparisonGUI(QMainWindow):
 
         left_img = self._create_overlay_image(self.flat_dists, top_n)
         self.left_panel.set_image(left_img)
-        self.left_count_label.setText(f"Showing top {top_n:,} / {total:,}")
+        avg_flat = self._avg_spatial_distance(self.flat_dists, top_n)
+        self.left_count_label.setText(
+            f"Top {top_n:,} / {total:,}  |  Avg distance: {avg_flat:.1f} px"
+        )
 
         right_img = self._create_overlay_image(self.per_frame_dists, top_n)
         self.right_panel.set_image(right_img)
-        self.right_count_label.setText(f"Showing top {top_n:,} / {total:,}")
+        avg_pf = self._avg_spatial_distance(self.per_frame_dists, top_n)
+        self.right_count_label.setText(
+            f"Top {top_n:,} / {total:,}  |  Avg distance: {avg_pf:.1f} px"
+        )
 
     def _on_topn_changed(self, value):
         self._update_overlay()
