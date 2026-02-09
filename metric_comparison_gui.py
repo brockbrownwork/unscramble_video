@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw, ImageFont
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QPushButton,
     QHBoxLayout, QVBoxLayout, QSpinBox, QLineEdit,
-    QFileDialog, QMessageBox, QGroupBox
+    QFileDialog, QMessageBox, QGroupBox, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
@@ -29,7 +29,11 @@ from tv_wall import TVWall
 # ---------------------------------------------------------------------------
 
 class ClickableImagePanel(QLabel):
-    """QLabel that emits pixel coordinates on click and hover."""
+    """QLabel that emits pixel coordinates on click and hover.
+
+    Automatically scales the image to fit the available widget size while
+    preserving the aspect ratio (nearest-neighbor for crisp pixels).
+    """
 
     pixel_clicked = pyqtSignal(int, int)
     mouse_moved = pyqtSignal(int, int)
@@ -41,22 +45,39 @@ class ClickableImagePanel(QLabel):
         self.setStyleSheet(
             "background-color: #f8d7e3; border: 2px solid #ffb6c1; border-radius: 8px;"
         )
-        self.setMinimumSize(400, 300)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumSize(200, 150)
         self.display_scale = 1.0
         self.wall_width = 0
         self.wall_height = 0
+        self._pil_image = None   # original PIL image for re-scaling on resize
         self._image_data = None  # prevent GC of QImage buffer
 
-    def set_image(self, pil_image, scale):
-        self.display_scale = scale
+    def set_image(self, pil_image, _scale=None):
+        """Store the image and scale it to fit the current widget size."""
+        self._pil_image = pil_image
         self.wall_width = pil_image.width
         self.wall_height = pil_image.height
+        self._refresh_pixmap()
 
-        scaled = pil_image.resize(
-            (int(pil_image.width * scale), int(pil_image.height * scale)),
-            Image.Resampling.NEAREST,
-        )
+    def _refresh_pixmap(self):
+        """Rescale stored image to fit current widget dimensions."""
+        if self._pil_image is None:
+            return
 
+        # Compute scale to fit within widget, preserving aspect ratio
+        w = self.width() - 4   # account for border
+        h = self.height() - 4
+        if w <= 0 or h <= 0:
+            return
+        scale_x = w / self._pil_image.width
+        scale_y = h / self._pil_image.height
+        self.display_scale = min(scale_x, scale_y)
+
+        new_w = max(1, int(self._pil_image.width * self.display_scale))
+        new_h = max(1, int(self._pil_image.height * self.display_scale))
+
+        scaled = self._pil_image.resize((new_w, new_h), Image.Resampling.NEAREST)
         rgb = scaled.convert("RGB")
         self._image_data = rgb.tobytes("raw", "RGB")
         qimg = QImage(
@@ -64,6 +85,10 @@ class ClickableImagePanel(QLabel):
             rgb.width * 3, QImage.Format_RGB888,
         )
         self.setPixmap(QPixmap.fromImage(qimg))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._refresh_pixmap()
 
     def _to_wall_coords(self, event):
         px = int(event.x() / self.display_scale)
@@ -101,7 +126,6 @@ class MetricComparisonGUI(QMainWindow):
         self.clicked_pixel = None       # (x, y)
         self.flat_dists = None          # (H, W) float32
         self.per_frame_dists = None     # (H, W) float32
-        self.display_scale = 2.0
 
         self._setup_ui()
 
@@ -249,8 +273,8 @@ class MetricComparisonGUI(QMainWindow):
         self.per_frame_dists = None
 
         # Display bare frame in both panels
-        self.left_panel.set_image(self.base_frame_image, self.display_scale)
-        self.right_panel.set_image(self.base_frame_image, self.display_scale)
+        self.left_panel.set_image(self.base_frame_image)
+        self.right_panel.set_image(self.base_frame_image)
         self.left_count_label.setText("")
         self.right_count_label.setText("")
 
@@ -347,11 +371,11 @@ class MetricComparisonGUI(QMainWindow):
         total = self.wall.width * self.wall.height
 
         left_img = self._create_overlay_image(self.flat_dists, top_n)
-        self.left_panel.set_image(left_img, self.display_scale)
+        self.left_panel.set_image(left_img)
         self.left_count_label.setText(f"Showing top {top_n:,} / {total:,}")
 
         right_img = self._create_overlay_image(self.per_frame_dists, top_n)
-        self.right_panel.set_image(right_img, self.display_scale)
+        self.right_panel.set_image(right_img)
         self.right_count_label.setText(f"Showing top {top_n:,} / {total:,}")
 
     def _on_topn_changed(self, value):
@@ -377,7 +401,7 @@ class MetricComparisonGUI(QMainWindow):
         left = self._create_overlay_image(self.flat_dists, top_n)
         right = self._create_overlay_image(self.per_frame_dists, top_n)
 
-        s = self.display_scale
+        s = 2.0  # fixed scale for saved image
         lw = int(left.width * s)
         lh = int(left.height * s)
         left_s = left.resize((lw, lh), Image.Resampling.NEAREST)
