@@ -66,4 +66,19 @@ A high coverage percentage means the top-N pixels are tightly clustered around t
 
 Another way to compare metrics: for increasing values of top-N, plot the **average spatial distance** (in pixels) from the clicked pixel to the top-N least dissonant pixels. A better metric will have a lower average spatial distance at each N, meaning its closest matches (by color-series distance) are also physically closer in the image. This curve reveals how quickly spatial coherence degrades as we include more pixels.
 
+### Circle Quality
 
+Inscribed circle coverage alone can be misleading — a metric could achieve high fill rate by selecting pixels that are all very close to the clicked pixel (tiny radius, dense fill) or by having a huge radius that happens to contain most of the image. Neither extreme is what we want. **Circle Quality** combines two factors into a single score using the geometric mean:
+
+- **Compactness** = 1 − radius / max_diagonal — measures how tight the circle is relative to the image size. A small radius (top-N pixels are nearby) gives high compactness; a radius spanning the whole image gives ~0.
+- **Fill rate** = top_N / (π × radius²) — measures how densely the top-N pixels pack the circle. A solid disc of selected pixels gives fill rate ~1; scattered outliers that inflate the radius give a low fill rate.
+
+**Circle Quality = √(compactness × fill_rate) × 100**
+
+The geometric mean ensures *both* components must be good for a high score. A tiny radius with sparse fill gets penalised, and so does a huge radius with dense fill. This makes Circle Quality a single number that captures the ideal: top-N pixels forming a tight, solid disc around the clicked pixel — exactly what a spatially coherent metric should produce.
+
+### Temporal Gradient Distance
+
+Instead of comparing absolute pixel colors across time, the **Temporal Gradient** metric compares frame-to-frame color *changes* (temporal derivatives). The intuition is that neighboring pixels undergo correlated changes from the same lighting shifts and motion, even when their absolute colors differ (e.g. at object boundaries). For each pair of pixels, compute `np.diff` along the time axis to get the frame-to-frame deltas, then measure the sum-of-per-frame Euclidean distance on those deltas.
+
+In practice, temporal gradient's circle quality tends to fall between flattened Euclidean and sum-of-per-frame Euclidean — it doesn't consistently beat either of the raw-color metrics. The derivative signal is noisier than the absolute color signal, which likely limits its standalone performance.
