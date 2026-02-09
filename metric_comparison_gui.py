@@ -410,6 +410,34 @@ class MetricComparisonGUI(QMainWindow):
 
         return (radius, circle_pixel_count, topn_in_circle, coverage_pct)
 
+    def _compute_circle_quality(self, distances, top_n):
+        """Combined metric: geometric mean of compactness and fill rate.
+
+        Compactness = 1 - radius / max_diagonal  (0 = spread across image, 1 = tight)
+        Fill rate   = coverage_pct / 100          (0 = sparse circle, 1 = solid disc)
+
+        Circle Quality = sqrt(compactness * fill_rate) * 100
+
+        The geometric mean ensures both components must be good for a high
+        score — a tiny radius with sparse fill, or a huge radius with dense
+        fill, both get penalised.
+        """
+        info = self._compute_circle_coverage(distances, top_n)
+        if info is None:
+            return None
+        radius, _circle_px, _topn_in, coverage_pct = info
+        H, W = distances.shape
+        max_diag = np.sqrt((W - 1) ** 2 + (H - 1) ** 2)
+        if max_diag == 0:
+            return None
+        compactness = 1.0 - radius / max_diag
+        fill_rate = coverage_pct / 100.0
+        # Clamp to avoid negative values from edge cases
+        compactness = max(0.0, min(1.0, compactness))
+        fill_rate = max(0.0, min(1.0, fill_rate))
+        quality = np.sqrt(compactness * fill_rate) * 100.0
+        return quality
+
     def _create_overlay_image(self, distances, top_n):
         """Return PIL Image with semi-transparent grey on the top-N least dissonant pixels."""
         base = np.array(self.base_frame_image).astype(np.float32)  # (H, W, 3)
@@ -458,7 +486,7 @@ class MetricComparisonGUI(QMainWindow):
         return float(spatial_dists.mean())
 
     def _format_label(self, distances, top_n, total):
-        """Build the label string including avg distance and circle coverage."""
+        """Build the label string including avg distance, circle coverage, and quality."""
         avg = self._avg_spatial_distance(distances, top_n)
         text = f"Top {top_n:,} / {total:,}  |  Avg dist: {avg:.1f} px"
 
@@ -467,6 +495,10 @@ class MetricComparisonGUI(QMainWindow):
             radius, circle_px, topn_in, pct = info
             text += (f"  |  Circle r={radius:.1f}: "
                      f"{topn_in:,}/{circle_px:,} = {pct:.1f}%")
+
+        quality = self._compute_circle_quality(distances, top_n)
+        if quality is not None:
+            text += f"  |  Quality: {quality:.1f}"
         return text
 
     def _update_overlay(self):
@@ -521,6 +553,40 @@ class MetricComparisonGUI(QMainWindow):
         cumavg = np.cumsum(spatial) / np.arange(1, len(spatial) + 1)
         return cumavg
 
+    def _cumulative_circle_quality(self, distances):
+        """Return array where element i = circle quality for top-(i+1) pixels.
+
+        For each top-N, computes the geometric mean of compactness and fill rate.
+        Vectorised: O(N log N) from the sort, O(N) for the running computations.
+        """
+        cx, cy = self.clicked_pixel
+        H, W = distances.shape
+        max_diag = np.sqrt((W - 1) ** 2 + (H - 1) ** 2)
+        if max_diag == 0:
+            return np.zeros(H * W)
+
+        flat = distances.ravel()
+        order = np.argsort(flat)
+        ys, xs = np.unravel_index(order, distances.shape)
+        spatial = np.sqrt((xs.astype(np.float64) - cx) ** 2 +
+                          (ys.astype(np.float64) - cy) ** 2)
+
+        # Running max distance = radius for each top-N
+        running_radius = np.maximum.accumulate(spatial)
+
+        # Compactness: 1 - radius / max_diag
+        compactness = np.clip(1.0 - running_radius / max_diag, 0.0, 1.0)
+
+        # Fill rate: top_n / (pi * radius^2), clamped to [0, 1]
+        ns = np.arange(1, len(spatial) + 1, dtype=np.float64)
+        circle_area = np.pi * running_radius ** 2
+        # Avoid division by zero for radius=0 (first pixel)
+        circle_area = np.maximum(circle_area, 1.0)
+        fill_rate = np.clip(ns / circle_area, 0.0, 1.0)
+
+        quality = np.sqrt(compactness * fill_rate) * 100.0
+        return quality
+
     def _plot_avg_distance(self):
         if self.flat_dists is None or self.clicked_pixel is None:
             QMessageBox.warning(self, "Warning", "Click a pixel first.")
@@ -532,18 +598,31 @@ class MetricComparisonGUI(QMainWindow):
         max_n = 10000
         flat_cumavg = self._cumulative_avg_spatial_dist(self.flat_dists)[:max_n]
         pf_cumavg = self._cumulative_avg_spatial_dist(self.per_frame_dists)[:max_n]
+        flat_quality = self._cumulative_circle_quality(self.flat_dists)[:max_n]
+        pf_quality = self._cumulative_circle_quality(self.per_frame_dists)[:max_n]
         ns = np.arange(1, len(flat_cumavg) + 1)
 
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.plot(ns, flat_cumavg, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
-        ax.plot(ns, pf_cumavg, label="Sum-of-Per-Frame Euclidean", color="#8b4563", linewidth=1.5)
-        ax.set_xlabel("Top-N")
-        ax.set_ylabel("Avg Spatial Distance (px)")
-        ax.set_title(
-            f"Avg Spatial Distance vs Top-N — pixel ({self.clicked_pixel[0]}, {self.clicked_pixel[1]})"
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 9), sharex=True)
+
+        # Top: Avg spatial distance
+        ax1.plot(ns, flat_cumavg, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
+        ax1.plot(ns, pf_cumavg, label="Sum-of-Per-Frame Euclidean", color="#8b4563", linewidth=1.5)
+        ax1.set_ylabel("Avg Spatial Distance (px)")
+        ax1.set_title(
+            f"Pixel ({self.clicked_pixel[0]}, {self.clicked_pixel[1]}) — Metric Comparison"
         )
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        # Bottom: Circle quality
+        ax2.plot(ns, flat_quality, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
+        ax2.plot(ns, pf_quality, label="Sum-of-Per-Frame Euclidean", color="#8b4563", linewidth=1.5)
+        ax2.set_xlabel("Top-N")
+        ax2.set_ylabel("Circle Quality")
+        ax2.set_title("Circle Quality = √(compactness × fill rate) × 100")
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
         fig.tight_layout()
         plt.show()
 
