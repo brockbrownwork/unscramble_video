@@ -84,6 +84,7 @@ python benchmark_gpu.py
 - **Neighbor Dissonance**: For each position, the average distance to its 8 neighbors. High dissonance = likely misplaced
 - **Pipeline**: Video → frames → TVs → UMAP embedding → RGB visualization → animation
 - **DTW (Dynamic Time Warping)**: Distance metric that accounts for time-shifts between sequences
+- **Summed Squared Color Distance**: Sum of per-frame squared Euclidean color distances — `Σ_t (ΔR² + ΔG² + ΔB²)`. Uses the `'squared'` distance metric internally.
 - **Stride**: Frame skip interval for capturing longer-term temporal patterns
 - **Color Entropy**: Shannon entropy of the color distribution in a frame. Used to filter out low-information frames (e.g., solid colors, fades to black).
 
