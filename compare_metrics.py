@@ -2,11 +2,10 @@
 """
 Compare distance metrics for neighbor dissonance.
 
-Computes dissonance heatmaps using 4 metrics side-by-side:
+Computes dissonance heatmaps using 3 metrics side-by-side:
   - Euclidean distance
   - Cosine distance (1 - cosine similarity)
   - Dot product difference (||a-b||² via dot product identity, always positive)
-  - Summed squared color distance (per-frame squared Euclidean in RGB, summed over frames)
 
 Usage:
     python compare_metrics.py -v cab_ride_trimmed.mkv -f 100 -s 30 -n 20
@@ -146,10 +145,6 @@ def main():
     metrics['Dot Product Diff'] = compute_dot_product_dissonance(
         wall, all_series, kernel_size=3)
 
-    print("--- Summed Sq Color Dist ---")
-    metrics['Sq Color Dist'] = wall.compute_dissonance_map(
-        all_series=all_series, kernel_size=3, distance_metric='squared')
-
     # Identify which positions are shuffled vs not
     identity_y, identity_x = np.mgrid[0:wall.height, 0:wall.width]
     is_shuffled = (wall._perm_x != identity_x) | (wall._perm_y != identity_y)
@@ -210,8 +205,7 @@ def main():
     print("=" * 60)
 
     # Plot: row 1 = heatmaps, row 2 = histograms
-    num_metrics = len(metrics)
-    fig, axes = plt.subplots(2, num_metrics, figsize=(6 * num_metrics, 10))
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
     fig.suptitle(f'Neighbor Dissonance Metric Comparison — {args.num_swaps} swaps, {args.frames} frames, stride {args.stride}',
                  fontsize=14, fontweight='bold')
     fig.text(0.5, 0.935,

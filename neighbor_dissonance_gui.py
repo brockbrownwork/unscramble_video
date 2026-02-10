@@ -130,13 +130,11 @@ class NeighborDissonanceGUI:
         self.use_euclidean_var = tk.BooleanVar(value=True)
         self.use_cosine_var = tk.BooleanVar(value=False)
         self.use_manhattan_var = tk.BooleanVar(value=False)
-        self.use_sq_color_dist_var = tk.BooleanVar(value=False)
 
         ttk.Checkbutton(metrics_frame, text="DTW", variable=self.use_dtw_var).pack(side=tk.LEFT)
         ttk.Checkbutton(metrics_frame, text="Euclidean", variable=self.use_euclidean_var).pack(side=tk.LEFT)
         ttk.Checkbutton(metrics_frame, text="Cosine", variable=self.use_cosine_var).pack(side=tk.LEFT)
         ttk.Checkbutton(metrics_frame, text="Manhattan", variable=self.use_manhattan_var).pack(side=tk.LEFT)
-        ttk.Checkbutton(metrics_frame, text="Sq Color Dist", variable=self.use_sq_color_dist_var).pack(side=tk.LEFT)
 
         ttk.Button(compute_frame, text="Compute Dissonance", command=self.compute_dissonance).pack(fill=tk.X, pady=2)
 
@@ -404,8 +402,6 @@ class NeighborDissonanceGUI:
             selected_metrics.append('cosine')
         if self.use_manhattan_var.get():
             selected_metrics.append('manhattan')
-        if self.use_sq_color_dist_var.get():
-            selected_metrics.append('squared')
 
         if not selected_metrics:
             messagebox.showwarning("Warning", "Select at least one distance metric")
@@ -507,8 +503,7 @@ class NeighborDissonanceGUI:
             'dtw': 'DTW',
             'euclidean': 'Euclidean',
             'cosine': 'Cosine',
-            'manhattan': 'Manhattan',
-            'squared': 'Sq Color Dist'
+            'manhattan': 'Manhattan'
         }
 
         for metric in self.active_metrics:
@@ -549,8 +544,7 @@ class NeighborDissonanceGUI:
             'dtw': 'DTW',
             'euclidean': 'EUCLIDEAN',
             'cosine': 'COSINE',
-            'manhattan': 'MANHATTAN',
-            'squared': 'SQ COLOR DIST'
+            'manhattan': 'MANHATTAN'
         }
 
         results = []
@@ -754,8 +748,7 @@ class NeighborDissonanceGUI:
                 'dtw': 'DTW',
                 'euclidean': 'Euclidean',
                 'cosine': 'Cosine',
-                'manhattan': 'Manhattan',
-                'squared': 'Sq Color Dist'
+                'manhattan': 'Manhattan'
             }
             try:
                 for i, metric in enumerate(self.active_metrics):
@@ -827,7 +820,7 @@ class NeighborDissonanceGUI:
             info += f" [originally ({orig_x}, {orig_y})]"
 
         # Show dissonance if computed
-        metric_short = {'dtw': 'DTW', 'euclidean': 'Euc', 'cosine': 'Cos', 'manhattan': 'Man', 'squared': 'SqC'}
+        metric_short = {'dtw': 'DTW', 'euclidean': 'Euc', 'cosine': 'Cos', 'manhattan': 'Man'}
         for metric, dissonance in self.dissonance_maps.items():
             if not np.isnan(dissonance[y, x]):
                 label = metric_short.get(metric, metric[:3])
