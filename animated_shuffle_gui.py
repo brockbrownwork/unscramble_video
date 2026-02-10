@@ -279,7 +279,8 @@ class AnimatedShuffleGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Animated Pixel Shuffle")
-        self.setMinimumSize(900, 650)
+        self.setMinimumSize(1200, 800)
+        self.resize(1200, 800)
 
         self.frames = None
         self.video_fps = 30
