@@ -45,7 +45,7 @@ unscramble_video/
 ├── bfs_solver.py                      # BFS jigsaw-style solver (pygame GUI)
 ├── neighbor_dissonance_gui.py         # Interactive dissonance visualization
 ├── greedy_solver_gui_pyqt.py          # Interactive solver (PyQt5, cute pink theme)
-├── compare_metrics.py                 # CLI tool comparing metrics + shuffled vs correct distributions + overlap analysis
+├── compare_metrics.py                 # CLI tool comparing 4 metrics + shuffled vs correct distributions + overlap analysis
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
 ├── benchmark_gpu.py                   # GPU vs CPU performance benchmarking
 ├── *.ipynb                            # Experimental notebooks
@@ -84,6 +84,7 @@ python benchmark_gpu.py
 - **Neighbor Dissonance**: For each position, the average distance to its 8 neighbors. High dissonance = likely misplaced
 - **Pipeline**: Video → frames → TVs → UMAP embedding → RGB visualization → animation
 - **DTW (Dynamic Time Warping)**: Distance metric that accounts for time-shifts between sequences
+- **Summed Squared Color Distance**: Sum of per-frame squared Euclidean color distances — `Σ_t (ΔR² + ΔG² + ΔB²)`. Uses the `'squared'` distance metric internally.
 - **Stride**: Frame skip interval for capturing longer-term temporal patterns
 - **Color Entropy**: Shannon entropy of the color distribution in a frame. Used to filter out low-information frames (e.g., solid colors, fades to black).
 
@@ -380,7 +381,7 @@ The GUI automatically uses GPU when CuPy is available and the metric is euclidea
 Interactive tool for visualizing dissonance:
 - Load video and set parameters (frames, stride, kernel size)
 - Perform random swaps or short-distance swaps
-- Compute DTW and Euclidean dissonance side-by-side
+- Compute dissonance with multiple metrics side-by-side (DTW, Euclidean, Cosine, Manhattan, Sq Color Dist)
 - View heatmaps with swap markers
 - Compare dissonance distributions between swapped and non-swapped positions
 
