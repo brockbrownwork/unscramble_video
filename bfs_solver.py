@@ -887,7 +887,7 @@ def parse_args():
                         help="Input video file")
     parser.add_argument("-f", "--frames", type=int, default=100,
                         help="Number of frames to load")
-    parser.add_argument("-s", "--stride", type=int, default=1,
+    parser.add_argument("-s", "--stride", type=int, default=100,
                         help="Frame skip interval")
     parser.add_argument("--crop", type=float, default=100,
                         help="Crop percentage (1-100)")
@@ -922,6 +922,11 @@ def parse_args():
                         help="Save before/after frame images (default: on)")
     parser.add_argument("--no-save-frames", action="store_false", dest="save_frames",
                         help="Disable saving before/after frame images")
+    parser.add_argument("--save-gif", type=str, nargs="?", const="bfs_result.gif",
+                        default=None,
+                        help="Save result as animated GIF (default filename: bfs_result.gif)")
+    parser.add_argument("--gif-fps", type=int, default=15,
+                        help="Frames per second for output GIF")
 
     parser.add_argument("--snapshot-interval", type=int, default=10_000,
                         help="Save a progress PNG every N placements (0 to disable)")
@@ -1017,6 +1022,21 @@ def main():
     if args.save_frames:
         wall.save_frame(0, "bfs_result.png")
         print("Saved bfs_result.png")
+
+    if args.save_gif:
+        print(f"Generating GIF with {wall.num_frames} frames...")
+        gif_frames = []
+        for t in tqdm(range(wall.num_frames), desc="Rendering GIF frames"):
+            gif_frames.append(wall.get_frame_image(t))
+        duration_ms = int(1000 / args.gif_fps)
+        gif_frames[0].save(
+            args.save_gif,
+            save_all=True,
+            append_images=gif_frames[1:],
+            duration=duration_ms,
+            loop=0,
+        )
+        print(f"Saved {args.save_gif} ({wall.num_frames} frames, {args.gif_fps} fps)")
 
     if args.output:
         print(f"Saving result video to {args.output}...")
