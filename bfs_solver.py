@@ -1025,12 +1025,69 @@ def main():
 
     if args.save_result_video:
         import subprocess as _sp
+        import cv2
+
         frames_dir = os.path.join(args.snapshot_dir, "result_frames")
         os.makedirs(frames_dir, exist_ok=True)
-        print(f"Rendering {wall.num_frames} solved frames to {frames_dir}/ ...")
-        for t in tqdm(range(wall.num_frames), desc="Saving result frame PNGs"):
-            img = wall.get_frame_image(t)
-            img.save(os.path.join(frames_dir, f"frame_{t:06d}.png"))
+
+        # Total dense frames = num_frames * stride (e.g. 100 * 100 = 10,000)
+        total_dense = args.frames * args.stride
+        batch_size = 100
+
+        # Compute crop params to match what TVWall applied
+        cap = cv2.VideoCapture(args.video)
+        raw_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        raw_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+
+        crop_pct = max(1, min(100, args.crop))
+        if crop_pct < 100:
+            scale = crop_pct / 100.0
+            crop_w = int(raw_w * scale)
+            crop_h = int(raw_h * scale)
+            crop_x = (raw_w - crop_w) // 2
+            crop_y = (raw_h - crop_h) // 2
+        else:
+            crop_w, crop_h = raw_w, raw_h
+            crop_x, crop_y = 0, 0
+
+        # Get the solved permutation from the wall
+        perm_y = wall._perm_y
+        perm_x = wall._perm_x
+
+        print(f"Rendering {total_dense} dense frames (stride=1) to {frames_dir}/ ...")
+        print(f"  Source video: {raw_w}x{raw_h}, crop: {crop_w}x{crop_h}")
+        print(f"  Loading in batches of {batch_size}")
+
+        frame_counter = 0
+        start_frame_idx = wall.start_frame  # same starting point as the solver used
+
+        for batch_start in tqdm(range(0, total_dense, batch_size),
+                                desc="Batches", unit="batch"):
+            batch_end = min(batch_start + batch_size, total_dense)
+            batch_count = batch_end - batch_start
+
+            # Open video and seek to batch start
+            cap = cv2.VideoCapture(args.video)
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame_idx + batch_start)
+
+            for i in range(batch_count):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                # BGR -> RGB
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # Apply crop
+                if crop_pct < 100:
+                    frame = frame[crop_y:crop_y + crop_h, crop_x:crop_x + crop_w]
+                # Apply solved permutation
+                output = frame[perm_y, perm_x]
+                img = Image.fromarray(output, mode='RGB')
+                img.save(os.path.join(frames_dir, f"frame_{frame_counter:06d}.png"))
+                frame_counter += 1
+
+            cap.release()
+
         # Encode with ffmpeg
         input_pattern = os.path.join(frames_dir, "frame_%06d.png")
         cmd = [
@@ -1042,10 +1099,10 @@ def main():
             "-crf", "18",
             args.save_result_video,
         ]
-        print(f"Encoding video with ffmpeg -> {args.save_result_video}")
+        print(f"Encoding {frame_counter} frames with ffmpeg -> {args.save_result_video}")
         result = _sp.run(cmd, capture_output=True, text=True)
         if result.returncode == 0:
-            print(f"Saved {args.save_result_video} ({wall.num_frames} frames, {args.result_fps} fps)")
+            print(f"Saved {args.save_result_video} ({frame_counter} frames, {args.result_fps} fps)")
         else:
             print(f"ffmpeg failed (exit {result.returncode}):")
             print(result.stderr[:500])
