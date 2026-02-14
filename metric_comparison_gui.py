@@ -447,13 +447,13 @@ class MetricComparisonGUI(QMainWindow):
 
         return (radius, circle_pixel_count, topn_in_circle, coverage_pct)
 
-    def _compute_circle_quality(self, distances, top_n):
+    def _compute_circle_sphericity(self, distances, top_n):
         """Combined metric: geometric mean of compactness and fill rate.
 
         Compactness = 1 - radius / max_diagonal  (0 = spread across image, 1 = tight)
         Fill rate   = coverage_pct / 100          (0 = sparse circle, 1 = solid disc)
 
-        Circle Quality = sqrt(compactness * fill_rate) * 100
+        Sphericity = sqrt(compactness * fill_rate) * 100
 
         The geometric mean ensures both components must be good for a high
         score — a tiny radius with sparse fill, or a huge radius with dense
@@ -472,8 +472,8 @@ class MetricComparisonGUI(QMainWindow):
         # Clamp to avoid negative values from edge cases
         compactness = max(0.0, min(1.0, compactness))
         fill_rate = max(0.0, min(1.0, fill_rate))
-        quality = np.sqrt(compactness * fill_rate) * 100.0
-        return quality
+        sphericity = np.sqrt(compactness * fill_rate) * 100.0
+        return sphericity
 
     def _create_overlay_image(self, distances, top_n):
         """Return PIL Image with semi-transparent grey on the top-N least dissonant pixels."""
@@ -523,7 +523,7 @@ class MetricComparisonGUI(QMainWindow):
         return float(spatial_dists.mean())
 
     def _format_label(self, distances, top_n, total):
-        """Build the label string including avg distance, circle coverage, and quality."""
+        """Build the label string including avg distance, circle coverage, and sphericity."""
         avg = self._avg_spatial_distance(distances, top_n)
         text = f"Top {top_n:,} / {total:,}  |  Avg dist: {avg:.1f} px"
 
@@ -533,9 +533,9 @@ class MetricComparisonGUI(QMainWindow):
             text += (f"  |  Circle r={radius:.1f}: "
                      f"{topn_in:,}/{circle_px:,} = {pct:.1f}%")
 
-        quality = self._compute_circle_quality(distances, top_n)
-        if quality is not None:
-            text += f"  |  Quality: {quality:.1f}"
+        sphericity = self._compute_circle_sphericity(distances, top_n)
+        if sphericity is not None:
+            text += f"  |  Sphericity: {sphericity:.1f}"
         return text
 
     def _update_overlay(self):
@@ -598,8 +598,8 @@ class MetricComparisonGUI(QMainWindow):
         cumavg = np.cumsum(spatial) / np.arange(1, len(spatial) + 1)
         return cumavg
 
-    def _cumulative_circle_quality(self, distances):
-        """Return array where element i = circle quality for top-(i+1) pixels.
+    def _cumulative_circle_sphericity(self, distances):
+        """Return array where element i = circle sphericity for top-(i+1) pixels.
 
         For each top-N, computes the geometric mean of compactness and fill rate.
         Vectorised: O(N log N) from the sort, O(N) for the running computations.
@@ -629,8 +629,8 @@ class MetricComparisonGUI(QMainWindow):
         circle_area = np.maximum(circle_area, 1.0)
         fill_rate = np.clip(ns / circle_area, 0.0, 1.0)
 
-        quality = np.sqrt(compactness * fill_rate) * 100.0
-        return quality
+        sphericity = np.sqrt(compactness * fill_rate) * 100.0
+        return sphericity
 
     def _plot_avg_distance(self):
         if self.flat_dists is None or self.clicked_pixel is None:
@@ -643,12 +643,12 @@ class MetricComparisonGUI(QMainWindow):
         max_n = 10000
         flat_cumavg = self._cumulative_avg_spatial_dist(self.flat_dists)[:max_n]
         pf_cumavg = self._cumulative_avg_spatial_dist(self.color_dists)[:max_n]
-        flat_quality = self._cumulative_circle_quality(self.flat_dists)[:max_n]
-        pf_quality = self._cumulative_circle_quality(self.color_dists)[:max_n]
+        flat_sphericity = self._cumulative_circle_sphericity(self.flat_dists)[:max_n]
+        pf_sphericity = self._cumulative_circle_sphericity(self.color_dists)[:max_n]
 
         # Temporal gradient metric
         grad_cumavg = self._cumulative_avg_spatial_dist(self.gradient_dists)[:max_n]
-        grad_quality = self._cumulative_circle_quality(self.gradient_dists)[:max_n]
+        grad_sphericity = self._cumulative_circle_sphericity(self.gradient_dists)[:max_n]
 
         ns = np.arange(1, len(flat_cumavg) + 1)
 
@@ -665,13 +665,13 @@ class MetricComparisonGUI(QMainWindow):
         ax1.legend()
         ax1.grid(True, alpha=0.3)
 
-        # Bottom: Circle quality
-        ax2.plot(ns, flat_quality, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
-        ax2.plot(ns, pf_quality, label="Summed Color Distance", color="#8b4563", linewidth=1.5)
-        ax2.plot(ns, grad_quality, label="Temporal Gradient", color="#2e86de", linewidth=1.5)
+        # Bottom: Circle sphericity
+        ax2.plot(ns, flat_sphericity, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
+        ax2.plot(ns, pf_sphericity, label="Summed Color Distance", color="#8b4563", linewidth=1.5)
+        ax2.plot(ns, grad_sphericity, label="Temporal Gradient", color="#2e86de", linewidth=1.5)
         ax2.set_xlabel("Top-N")
-        ax2.set_ylabel("Circle Quality")
-        ax2.set_title("Circle Quality = √(compactness × fill rate) × 100")
+        ax2.set_ylabel("Sphericity")
+        ax2.set_title("Sphericity = √(compactness × fill rate) × 100")
         ax2.legend()
         ax2.grid(True, alpha=0.3)
 
