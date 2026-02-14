@@ -922,11 +922,11 @@ def parse_args():
                         help="Save before/after frame images (default: on)")
     parser.add_argument("--no-save-frames", action="store_false", dest="save_frames",
                         help="Disable saving before/after frame images")
-    parser.add_argument("--save-gif", type=str, nargs="?", const="bfs_result.gif",
-                        default=None,
-                        help="Save result as animated GIF (default filename: bfs_result.gif)")
-    parser.add_argument("--gif-fps", type=int, default=15,
-                        help="Frames per second for output GIF")
+    parser.add_argument("--save-result-video", type=str, nargs="?",
+                        const="bfs_result.mp4", default=None,
+                        help="Save solved frames as video (default: bfs_result.mp4)")
+    parser.add_argument("--result-fps", type=int, default=15,
+                        help="Frames per second for result video")
 
     parser.add_argument("--snapshot-interval", type=int, default=10_000,
                         help="Save a progress PNG every N placements (0 to disable)")
@@ -1023,20 +1023,32 @@ def main():
         wall.save_frame(0, "bfs_result.png")
         print("Saved bfs_result.png")
 
-    if args.save_gif:
-        print(f"Generating GIF with {wall.num_frames} frames...")
-        gif_frames = []
-        for t in tqdm(range(wall.num_frames), desc="Rendering GIF frames"):
-            gif_frames.append(wall.get_frame_image(t))
-        duration_ms = int(1000 / args.gif_fps)
-        gif_frames[0].save(
-            args.save_gif,
-            save_all=True,
-            append_images=gif_frames[1:],
-            duration=duration_ms,
-            loop=0,
-        )
-        print(f"Saved {args.save_gif} ({wall.num_frames} frames, {args.gif_fps} fps)")
+    if args.save_result_video:
+        import subprocess as _sp
+        frames_dir = os.path.join(args.snapshot_dir, "result_frames")
+        os.makedirs(frames_dir, exist_ok=True)
+        print(f"Rendering {wall.num_frames} solved frames to {frames_dir}/ ...")
+        for t in tqdm(range(wall.num_frames), desc="Saving result frame PNGs"):
+            img = wall.get_frame_image(t)
+            img.save(os.path.join(frames_dir, f"frame_{t:06d}.png"))
+        # Encode with ffmpeg
+        input_pattern = os.path.join(frames_dir, "frame_%06d.png")
+        cmd = [
+            "ffmpeg", "-y",
+            "-framerate", str(args.result_fps),
+            "-i", input_pattern,
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-crf", "18",
+            args.save_result_video,
+        ]
+        print(f"Encoding video with ffmpeg -> {args.save_result_video}")
+        result = _sp.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"Saved {args.save_result_video} ({wall.num_frames} frames, {args.result_fps} fps)")
+        else:
+            print(f"ffmpeg failed (exit {result.returncode}):")
+            print(result.stderr[:500])
 
     if args.output:
         print(f"Saving result video to {args.output}...")

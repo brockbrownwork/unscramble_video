@@ -23,7 +23,8 @@
       "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" commit -m \"$\\(cat <<''EOF''\nfeat: disable BFS shortlisting by default\n\nShortlist size now defaults to 0 \\(off\\), so all unplaced candidates get\nfull time-series evaluation. Can be re-enabled with --shortlist N.\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" push)",
       "Bash(ls:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(git pull:*)"
     ]
   }
 }
