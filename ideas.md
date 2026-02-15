@@ -2,10 +2,16 @@
 
 This document contains some relevant thoughts and resources to the Video Unscrambling Problem.
 
-<figure>
-  <video src="C:\Users\Brock\Documents\code\unscramble_video\bfs_output\comparison.mp4" controls></video>
-  <figcaption><em>Original video (top) vs. BFS reconstruction attempt (bottom). There are clear boundaries that can be detected with the sobel algorithm, and many of these edges are shared with the other frames. Theoretically if the video is in its original permutation, the heatmap of the edges should be roughly uniform in color.</em></figcaption>
+<figure style="display: table">
+  <video src="C:\Users\Brock\Documents\code\unscramble_video\bfs_output\comparison.mp4" controls autoplay loop muted></video>
+  <figcaption style="display: table-caption; caption-side: bottom"><em>Original video (top) vs. BFS reconstruction attempt (bottom). There are clear boundaries that can be detected with the sobel algorithm, and many of these edges are shared with the other frames. Theoretically if the video is in its original permutation, the heatmap of the edges should be roughly uniform in color.</em></figcaption>
 </figure>
+<figure style="display: table">
+  <img src="C:\Users\Brock\Documents\code\unscramble_video\bfs_output\common_edges\common_edges_heatmap.png" alt="common edges heatmap" />
+  <figcaption style="display: table-caption; caption-side: bottom"><em>Heatmap of persistent edges detected across all frames of the BFS reconstruction. Brighter regions indicate edges that appear consistently across many frames. The non-uniform distribution reveals boundary artifacts from misplaced pixels.</em></figcaption>
+</figure>
+
+
 
 ## Interesting and relevant resources:
 
