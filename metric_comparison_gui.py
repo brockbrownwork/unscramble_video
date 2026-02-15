@@ -11,6 +11,7 @@ Usage:
 
 import sys
 import os
+import subprocess
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import matplotlib.pyplot as plt
@@ -162,8 +163,8 @@ class MetricComparisonGUI(QMainWindow):
 
         ctrl_layout.addWidget(QLabel("Stride:"))
         self.stride_spin = QSpinBox()
-        self.stride_spin.setRange(1, 100)
-        self.stride_spin.setValue(1)
+        self.stride_spin.setRange(1, 1000)
+        self.stride_spin.setValue(100)
         ctrl_layout.addWidget(self.stride_spin)
 
         load_btn = QPushButton("Load Video")
@@ -193,6 +194,10 @@ class MetricComparisonGUI(QMainWindow):
         save_btn = QPushButton("Save PNG")
         save_btn.clicked.connect(self._save_figure)
         topn_layout.addWidget(save_btn)
+
+        open_btn = QPushButton("Open PNG")
+        open_btn.clicked.connect(self._open_figure)
+        topn_layout.addWidget(open_btn)
 
         root_layout.addWidget(topn_group)
 
@@ -715,12 +720,28 @@ class MetricComparisonGUI(QMainWindow):
         if not filepath:
             return
 
+        self._save_to_path(filepath)
+        self.info_label.setText(f"Saved: {filepath}")
+
+    def _open_figure(self):
+        if self.flat_dists is None:
+            QMessageBox.warning(self, "Warning", "Click a pixel first.")
+            return
+
+        filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "metric_comparison.png")
+        self._save_to_path(filepath)
+        os.startfile(filepath)
+        self.info_label.setText(f"Opened: {filepath}")
+
+    def _save_to_path(self, filepath):
+        """Save the combined 3-panel figure to the given path."""
         top_n = self.topn_spin.value()
         left = self._create_overlay_image(self.flat_dists, top_n)
         mid = self._create_overlay_image(self.color_dists, top_n)
         right = self._create_overlay_image(self.mahal_dists, top_n)
 
-        s = 2.0  # fixed scale for saved image
+        s = 2.0
         pw = int(left.width * s)
         ph = int(left.height * s)
         left_s = left.resize((pw, ph), Image.Resampling.NEAREST)
@@ -747,7 +768,6 @@ class MetricComparisonGUI(QMainWindow):
                   fill=(139, 69, 99), anchor="mt", font=font)
 
         combined.save(filepath)
-        self.info_label.setText(f"Saved: {filepath}")
 
 
 # ---------------------------------------------------------------------------
