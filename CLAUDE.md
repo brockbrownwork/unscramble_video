@@ -46,6 +46,7 @@ unscramble_video/
 ├── neighbor_dissonance_gui.py         # Interactive dissonance visualization
 ├── greedy_solver_gui_pyqt.py          # Interactive solver (PyQt5, cute pink theme)
 ├── metric_comparison_gui.py            # Side-by-side metric comparison (Flattened Euclidean, Summed Color, Mahalanobis)
+├── common_edges.py                    # Persistent edge detection across frames
 ├── compare_metrics.py                 # CLI tool comparing 4 metrics + shuffled vs correct distributions + overlap analysis
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
 ├── benchmark_gpu.py                   # GPU vs CPU performance benchmarking
@@ -77,6 +78,9 @@ python compare_metrics.py -v video.mkv -f 100 -s 30 -n 20
 
 # Run GPU benchmark
 python benchmark_gpu.py
+
+# Find persistent edges across video frames
+python common_edges.py -i path/to/frames/ -t 0.4
 ```
 
 ## Key Concepts
@@ -504,6 +508,54 @@ python experiment_neighbor_dissonance.py \
 # - ROC curve with AUC
 # - Dissonance heatmap overlay
 # - Statistics (separation z-score, top-K recall)
+```
+
+## Common Edge Detection (`common_edges.py`)
+
+Finds persistent/structural edges that appear across many video frames, robust to frames where those edges are absent (scene changes, motion blur, etc.).
+
+### How It Works
+
+1. **Canny edge detection** on every frame
+2. **Accumulate** edge maps into a frequency image — each pixel stores the fraction of frames that had an edge there
+3. **Gaussian blur** on the accumulator (sigma=1.0) to handle sub-pixel edge drift between frames
+4. **Threshold** at a percentage (default 40%) — edges must appear in at least that fraction of frames to count as persistent
+
+### CLI Usage
+
+```bash
+# Default: reads from bfs_output/result_frames, threshold 40%
+python common_edges.py
+
+# Custom settings
+python common_edges.py -i path/to/frames/ -t 0.3 -b 1.5 --canny-low 30 --canny-high 120 -o output_dir/
+```
+
+**Parameters:**
+- `-i, --input-dir`: Directory containing PNG frames
+- `-t, --threshold`: Fraction of frames an edge must appear in (0.0-1.0, default: 0.4)
+- `-b, --blur-sigma`: Gaussian blur sigma on accumulator for sub-pixel drift (0 to disable, default: 1.0)
+- `--canny-low/--canny-high`: Canny hysteresis thresholds (default: 50/150)
+- `-o, --output-dir`: Output directory (default: `<input_dir>/../common_edges`)
+
+### Outputs
+
+- **`common_edges_binary.png`**: Black/white persistent edge image
+- **`common_edges_heatmap.png`**: Colorized frequency heatmap (Inferno colormap) showing which edges are most vs. least consistent
+- **`edge_frequency.npy`**: Raw float32 frequency map for further processing
+
+### Python API
+
+```python
+from common_edges import detect_common_edges
+
+frequency_map, binary_edges = detect_common_edges(
+    input_dir="bfs_output/result_frames",
+    threshold=0.4,
+    blur_sigma=1.0,
+    canny_low=50,
+    canny_high=150,
+)
 ```
 
 ## Coding Conventions
