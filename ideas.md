@@ -14,9 +14,11 @@ This document contains some relevant thoughts and resources to the Video Unscram
     <td><img src="C:\Users\Brock\Documents\code\unscramble_video\visible_edges_example.png" alt="visible_edges_example"></td>
     <td><img src="C:\Users\Brock\Documents\code\unscramble_video\bfs_output\common_edges\common_edges_heatmap.png" alt="common_edges_heatmap"></td>
   </tr>
+  <tr>
+    <td colspan="2"><em>Pictured: one frame of an unscrambling attempt, along with a sobel heatmap representing edges of all frames. There are clear boundaries that can be detected with the sobel algorithm, and many of these edges are shared with the other frames. Theoretically if the video is in its original permutation, the heatmap of the edges should be roughly flat.</em></td>
+  </tr>
 </table>
 
-*Pictured: one frame of an unscrambling attempt, along with a sobel heatmap representing edges of all frames. There are clear boundaries that can be detected with the sobel algorithm, and many of these edges are shared with the other frames.*
 
 ### [Temporal dependence Mahalanobis distance for anomaly detection in multivariate spacecraft telemetry series](https://pubmed.ncbi.nlm.nih.gov/37331907/)
 
@@ -28,6 +30,10 @@ This document contains some relevant thoughts and resources to the Video Unscram
 
 ### [Solving Square Jigsaw Puzzles with Loop Constraints](https://faculty.cc.gatech.edu/~hays/papers/puzzle_eccv14.pdf)
 
-- Pertains to solving jigsaw puzzles with square pieces where the rotation of the pieces is not given. 
+- Pertains to solving jigsaw puzzles with square pieces where the rotation of the pieces is not given, so it's a very similar problem.
 
 ### [Beyond Locality-Sensitive Hashing](https://www.youtube.com/watch?v=a8Aaap9maB0)
+
+### [How Super Resolution Works](https://www.youtube.com/watch?v=KULkSwLk62I&t=249s)
+
+- If you can properly arrange a lower resolution version of the image, it may be possible to use Super Resolution to help reconstruct the rest of the image.
