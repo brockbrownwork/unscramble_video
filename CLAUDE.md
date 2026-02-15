@@ -45,6 +45,7 @@ unscramble_video/
 ├── bfs_solver.py                      # BFS jigsaw-style solver (pygame GUI)
 ├── neighbor_dissonance_gui.py         # Interactive dissonance visualization
 ├── greedy_solver_gui_pyqt.py          # Interactive solver (PyQt5, cute pink theme)
+├── metric_comparison_gui.py            # Side-by-side metric comparison (Flattened Euclidean, Summed Color, Mahalanobis)
 ├── compare_metrics.py                 # CLI tool comparing 4 metrics + shuffled vs correct distributions + overlap analysis
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
 ├── benchmark_gpu.py                   # GPU vs CPU performance benchmarking
@@ -65,6 +66,7 @@ pip install cupy-cuda12x       # Optional: GPU acceleration (adjust for your CUD
 # Run interactive GUIs
 python neighbor_dissonance_gui.py    # Visualize dissonance heatmaps
 python greedy_solver_gui_pyqt.py     # Run solver with animation (PyQt5, pink theme)
+python metric_comparison_gui.py      # Compare Flattened Euclidean vs Summed Color vs Mahalanobis
 python bfs_solver.py -v video.mkv -f 100  # BFS jigsaw solver with pygame GUI
 
 # Run CLI experiment
@@ -85,6 +87,7 @@ python benchmark_gpu.py
 - **Pipeline**: Video → frames → TVs → UMAP embedding → RGB visualization → animation
 - **DTW (Dynamic Time Warping)**: Distance metric that accounts for time-shifts between sequences
 - **Summed Squared Color Distance**: Sum of per-frame squared Euclidean color distances — `Σ_t (ΔR² + ΔG² + ΔB²)`. Uses the `'squared'` distance metric internally.
+- **Mahalanobis Distance**: Per-frame distance weighted by the inverse covariance of the reference pixel's color channels. Accounts for R/G/B correlations so correlated channel deviations are penalized less than independent ones. Computed as `Σ_t √(Δcᵀ Σ⁻¹ Δc)` where `Σ` is the 3×3 channel covariance of the clicked pixel.
 - **Stride**: Frame skip interval for capturing longer-term temporal patterns
 - **Color Entropy**: Shannon entropy of the color distribution in a frame. Used to filter out low-information frames (e.g., solid colors, fades to black).
 
@@ -384,6 +387,15 @@ Interactive tool for visualizing dissonance:
 - Compute dissonance with multiple metrics side-by-side (DTW, Euclidean, Cosine, Manhattan, Sq Color Dist)
 - View heatmaps with swap markers
 - Compare dissonance distributions between swapped and non-swapped positions
+
+### Metric Comparison GUI (`metric_comparison_gui.py`)
+
+Side-by-side comparison of three distance metrics (PyQt5, pink theme):
+- **Flattened Euclidean**: `√(Σ_t Σ_c (Δc)²)` — treats the full (3×T) color series as a single vector
+- **Summed Color Distance**: `Σ_t √(Σ_c (Δc)²)` — per-frame Euclidean distances summed over time
+- **Mahalanobis**: `Σ_t √(Δcᵀ Σ⁻¹ Δc)` — per-frame distance weighted by inverse channel covariance of the clicked pixel; captures R/G/B correlations
+
+Click any pixel to compute distances from that pixel to all others. The top-N closest pixels are highlighted as a semi-transparent grey overlay with an inscribed circle outline. Metrics shown per panel: avg spatial distance, circle coverage, and sphericity (geometric mean of compactness × fill rate). Includes a "Plot Avg Distance" button for cumulative avg-distance and sphericity curves across all three metrics.
 
 ### Greedy Solver GUI (`greedy_solver_gui_pyqt.py`)
 
