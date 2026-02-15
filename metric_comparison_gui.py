@@ -1,6 +1,6 @@
 """
 Metric Comparison GUI — Compare flattened Euclidean vs summed color distance
-vs Mahalanobis distance.
+vs Mahalanobis distance vs temporal Mahalanobis distance.
 
 Click a pixel to see the N least dissonant pixels for each metric,
 overlaid as semi-transparent grey on the original frame.
@@ -120,16 +120,18 @@ class ClickableImagePanel(QLabel):
 class MetricComparisonGUI(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Metric Comparison — Flattened vs Summed Color vs Mahalanobis")
+        self.setWindowTitle("Metric Comparison — Flattened vs Summed Color vs Mahalanobis vs Temporal Mahalanobis")
 
         # State
         self.wall = None
         self.all_series = None          # (H, W, 3, T) float32
         self.base_frame_image = None    # PIL Image
         self.clicked_pixel = None       # (x, y)
-        self.flat_dists = None          # (H, W) float32
-        self.color_dists = None     # (H, W) float32
-        self.mahal_dists = None         # (H, W) float32
+        self.flat_dists = None              # (H, W) float32
+        self.color_dists = None             # (H, W) float32
+        self.mahal_dists = None             # (H, W) float32
+        self.temporal_mahal_dists = None    # (H, W) float32
+        self.cov_time_inv = None            # (T, T) float64 — precomputed
 
         self._setup_ui()
 
@@ -283,6 +285,24 @@ class MetricComparisonGUI(QMainWindow):
 
         panels_layout.addLayout(right_col)
 
+        # Far-right panel — Temporal Mahalanobis Distance
+        tmahal_col = QVBoxLayout()
+        tmahal_title = QLabel("Temporal Mahalanobis")
+        tmahal_title.setAlignment(Qt.AlignCenter)
+        tmahal_title.setStyleSheet("font-weight: bold; font-size: 13px;")
+        tmahal_col.addWidget(tmahal_title)
+
+        self.tmahal_panel = ClickableImagePanel()
+        self.tmahal_panel.pixel_clicked.connect(self._on_pixel_clicked)
+        self.tmahal_panel.mouse_moved.connect(self._on_mouse_hover)
+        tmahal_col.addWidget(self.tmahal_panel)
+
+        self.tmahal_count_label = QLabel("")
+        self.tmahal_count_label.setAlignment(Qt.AlignCenter)
+        tmahal_col.addWidget(self.tmahal_count_label)
+
+        panels_layout.addLayout(tmahal_col)
+
         root_layout.addLayout(panels_layout, stretch=1)
 
     # -----------------------------------------------------------------------
@@ -319,6 +339,20 @@ class MetricComparisonGUI(QMainWindow):
         self.flat_dists = None
         self.color_dists = None
         self.mahal_dists = None
+        self.temporal_mahal_dists = None
+
+        # Precompute T×T temporal covariance for temporal Mahalanobis.
+        # Treat every channel of every pixel as an independent T-dimensional
+        # observation.  The resulting covariance captures how pixel values at
+        # different time-points co-vary across the whole image.
+        self.info_label.setText("Computing temporal covariance…")
+        QApplication.processEvents()
+        H, W, C, T = self.all_series.shape
+        all_channels = self.all_series.reshape(H * W * C, T)  # (N, T)
+        cov_time = np.cov(all_channels, rowvar=False)          # (T, T)
+        cov_time += np.eye(T) * 1e-6                           # regularise
+        self.cov_time_inv = np.linalg.inv(cov_time)            # (T, T)
+        del all_channels
 
         # Configure frame slider
         self.frame_slider.setRange(0, self.wall.num_frames - 1)
@@ -330,9 +364,11 @@ class MetricComparisonGUI(QMainWindow):
         self.left_panel.set_image(self.base_frame_image)
         self.mid_panel.set_image(self.base_frame_image)
         self.right_panel.set_image(self.base_frame_image)
+        self.tmahal_panel.set_image(self.base_frame_image)
         self.left_count_label.setText("")
         self.mid_count_label.setText("")
         self.right_count_label.setText("")
+        self.tmahal_count_label.setText("")
 
         total = self.wall.width * self.wall.height
         self.info_label.setText(
@@ -354,8 +390,9 @@ class MetricComparisonGUI(QMainWindow):
 
         # clicked series shape: (3, T)
         clicked_series = self.all_series[py, px]
+        H, W, C, T = self.all_series.shape
 
-        # diff shape: (H, W, 3, T)
+        # Common difference used by all four metrics: (H, W, 3, T)
         diff = self.all_series - clicked_series[np.newaxis, np.newaxis, :, :]
         sq_diff = diff ** 2
 
@@ -366,39 +403,37 @@ class MetricComparisonGUI(QMainWindow):
         per_frame_sq = np.sum(sq_diff, axis=2)  # (H, W, T)
         self.color_dists = np.sum(np.sqrt(per_frame_sq), axis=2)  # (H, W)
 
-        del diff, sq_diff, per_frame_sq
+        del sq_diff, per_frame_sq
 
-        # Metric 3 — Mahalanobis Distance
-        # Treats each pixel's color series as a point in 3T-dimensional space
-        # (or equivalently as T observations of 3-channel vectors) and measures
-        # distance using the inverse covariance of the clicked pixel's
-        # frame-to-frame color vectors, capturing channel correlations.
-        H, W, C, T = self.all_series.shape
-
-        # Use the clicked pixel's color series to estimate covariance (3×3)
-        # across the 3 color channels over T frames.
+        # Metric 3 — Mahalanobis Distance (channel covariance)
+        # Per-frame distance weighted by the 3×3 inverse channel covariance
+        # of the clicked pixel.  Captures R/G/B correlations.
         clicked_colors = clicked_series.T  # (T, 3)
         cov = np.cov(clicked_colors, rowvar=False)  # (3, 3)
-
-        # Regularise to ensure invertibility
         cov += np.eye(C) * 1e-6
         cov_inv = np.linalg.inv(cov)  # (3, 3)
 
-        # Mean difference per frame: (H, W, 3, T) → per-frame Mahalanobis²
-        # For each frame t: d²_t = (Δc)ᵀ Σ⁻¹ (Δc) where Δc = series[y,x,:,t] - clicked[:,t]
-        all_diff = self.all_series - clicked_series[np.newaxis, np.newaxis, :, :]  # (H, W, 3, T)
-
-        # Reshape for batch matmul: (H*W*T, 3)
-        all_diff_flat = all_diff.transpose(0, 1, 3, 2).reshape(-1, C)  # (H*W*T, 3)
-        # Mahalanobis² per sample: rowwise x @ cov_inv @ x.T
+        all_diff_flat = diff.transpose(0, 1, 3, 2).reshape(-1, C)  # (H*W*T, 3)
         transformed = all_diff_flat @ cov_inv  # (H*W*T, 3)
         mahal_sq_flat = np.sum(transformed * all_diff_flat, axis=1)  # (H*W*T,)
         mahal_sq = mahal_sq_flat.reshape(H, W, T)  # (H, W, T)
-
-        # Sum of per-frame Mahalanobis distances
         self.mahal_dists = np.sum(np.sqrt(np.maximum(mahal_sq, 0.0)), axis=2)  # (H, W)
+        del all_diff_flat, transformed, mahal_sq_flat, mahal_sq
 
-        del all_diff, all_diff_flat, transformed, mahal_sq_flat, mahal_sq
+        # Metric 4 — Temporal Mahalanobis Distance
+        # Per-channel Mahalanobis using the T×T temporal covariance estimated
+        # from the population of all pixel-channels.  Decorrelates the time
+        # axis so redundant frames are down-weighted and informative frames
+        # (scene changes, fast motion) are up-weighted.
+        #   d = Σ_c √( Δx_c^T  Σ_time^{-1}  Δx_c )
+        # where Δx_c is the T-dimensional per-channel difference vector.
+        transformed_t = diff @ self.cov_time_inv       # (H, W, 3, T)
+        mahal_sq_t = np.sum(transformed_t * diff, axis=3)  # (H, W, 3) — per-channel Mahalanobis²
+        self.temporal_mahal_dists = np.sum(
+            np.sqrt(np.maximum(mahal_sq_t, 0.0)), axis=2
+        )  # (H, W)
+
+        del diff, transformed_t, mahal_sq_t
 
         # Adjust top-N max to total pixel count
         total = self.wall.width * self.wall.height
@@ -407,7 +442,8 @@ class MetricComparisonGUI(QMainWindow):
         self.info_label.setText(
             f"Clicked ({px}, {py}) — "
             f"Flat max: {float(self.flat_dists.max()):.0f}, "
-            f"Color max: {float(self.color_dists.max()):.0f}"
+            f"Color max: {float(self.color_dists.max()):.0f}, "
+            f"TMahal max: {float(self.temporal_mahal_dists.max()):.0f}"
         )
 
         self._update_overlay()
@@ -418,9 +454,10 @@ class MetricComparisonGUI(QMainWindow):
         fd = self.flat_dists[py, px]
         pfd = self.color_dists[py, px]
         md = self.mahal_dists[py, px] if self.mahal_dists is not None else 0.0
+        tmd = self.temporal_mahal_dists[py, px] if self.temporal_mahal_dists is not None else 0.0
         self.info_label.setText(
             f"Hover ({px}, {py}) — "
-            f"Flat: {fd:.1f}  |  Color: {pfd:.1f}  |  Mahal: {md:.1f}"
+            f"Flat: {fd:.1f}  |  Color: {pfd:.1f}  |  Mahal: {md:.1f}  |  TMahal: {tmd:.1f}"
         )
 
     # -----------------------------------------------------------------------
@@ -588,6 +625,13 @@ class MetricComparisonGUI(QMainWindow):
                 self._format_label(self.mahal_dists, top_n, total)
             )
 
+        if self.temporal_mahal_dists is not None:
+            tmahal_img = self._create_overlay_image(self.temporal_mahal_dists, top_n)
+            self.tmahal_panel.set_image(tmahal_img)
+            self.tmahal_count_label.setText(
+                self._format_label(self.temporal_mahal_dists, top_n, total)
+            )
+
     def _on_topn_changed(self, value):
         self._update_overlay()
 
@@ -602,6 +646,7 @@ class MetricComparisonGUI(QMainWindow):
             self.left_panel.set_image(self.base_frame_image)
             self.mid_panel.set_image(self.base_frame_image)
             self.right_panel.set_image(self.base_frame_image)
+            self.tmahal_panel.set_image(self.base_frame_image)
 
     # -----------------------------------------------------------------------
     # Plot
@@ -674,14 +719,19 @@ class MetricComparisonGUI(QMainWindow):
         mahal_cumavg = self._cumulative_avg_spatial_dist(self.mahal_dists)[:max_n]
         mahal_sphericity = self._cumulative_circle_sphericity(self.mahal_dists)[:max_n]
 
+        # Temporal Mahalanobis metric
+        tmahal_cumavg = self._cumulative_avg_spatial_dist(self.temporal_mahal_dists)[:max_n]
+        tmahal_sphericity = self._cumulative_circle_sphericity(self.temporal_mahal_dists)[:max_n]
+
         ns = np.arange(1, len(flat_cumavg) + 1)
 
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 9), sharex=True)
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 9), sharex=True)
 
         # Top: Avg spatial distance
         ax1.plot(ns, flat_cumavg, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
         ax1.plot(ns, pf_cumavg, label="Summed Color Distance", color="#8b4563", linewidth=1.5)
         ax1.plot(ns, mahal_cumavg, label="Mahalanobis", color="#2e86de", linewidth=1.5)
+        ax1.plot(ns, tmahal_cumavg, label="Temporal Mahalanobis", color="#27ae60", linewidth=1.5)
         ax1.set_ylabel("Avg Spatial Distance (px)")
         ax1.set_title(
             f"Pixel ({self.clicked_pixel[0]}, {self.clicked_pixel[1]}) — Metric Comparison"
@@ -693,6 +743,7 @@ class MetricComparisonGUI(QMainWindow):
         ax2.plot(ns, flat_sphericity, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
         ax2.plot(ns, pf_sphericity, label="Summed Color Distance", color="#8b4563", linewidth=1.5)
         ax2.plot(ns, mahal_sphericity, label="Mahalanobis", color="#2e86de", linewidth=1.5)
+        ax2.plot(ns, tmahal_sphericity, label="Temporal Mahalanobis", color="#27ae60", linewidth=1.5)
         ax2.set_xlabel("Top-N")
         ax2.set_ylabel("Sphericity")
         ax2.set_title("Sphericity = √(compactness × fill rate) × 100")
@@ -735,11 +786,12 @@ class MetricComparisonGUI(QMainWindow):
         self.info_label.setText(f"Opened: {filepath}")
 
     def _save_to_path(self, filepath):
-        """Save the combined 3-panel figure to the given path."""
+        """Save the combined 4-panel figure to the given path."""
         top_n = self.topn_spin.value()
         left = self._create_overlay_image(self.flat_dists, top_n)
         mid = self._create_overlay_image(self.color_dists, top_n)
         right = self._create_overlay_image(self.mahal_dists, top_n)
+        tmahal = self._create_overlay_image(self.temporal_mahal_dists, top_n)
 
         s = 2.0
         pw = int(left.width * s)
@@ -747,13 +799,15 @@ class MetricComparisonGUI(QMainWindow):
         left_s = left.resize((pw, ph), Image.Resampling.NEAREST)
         mid_s = mid.resize((pw, ph), Image.Resampling.NEAREST)
         right_s = right.resize((pw, ph), Image.Resampling.NEAREST)
+        tmahal_s = tmahal.resize((pw, ph), Image.Resampling.NEAREST)
 
         gap = 20
         title_h = 30
-        combined = Image.new("RGB", (pw * 3 + gap * 2, ph + title_h), (255, 240, 245))
+        combined = Image.new("RGB", (pw * 4 + gap * 3, ph + title_h), (255, 240, 245))
         combined.paste(left_s, (0, title_h))
         combined.paste(mid_s, (pw + gap, title_h))
         combined.paste(right_s, (pw * 2 + gap * 2, title_h))
+        combined.paste(tmahal_s, (pw * 3 + gap * 3, title_h))
 
         draw = ImageDraw.Draw(combined)
         try:
@@ -765,6 +819,8 @@ class MetricComparisonGUI(QMainWindow):
         draw.text((pw + gap + pw // 2, 5), "Summed Color Distance",
                   fill=(139, 69, 99), anchor="mt", font=font)
         draw.text((pw * 2 + gap * 2 + pw // 2, 5), "Mahalanobis",
+                  fill=(139, 69, 99), anchor="mt", font=font)
+        draw.text((pw * 3 + gap * 3 + pw // 2, 5), "Temporal Mahalanobis",
                   fill=(139, 69, 99), anchor="mt", font=font)
 
         combined.save(filepath)
@@ -826,7 +882,7 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(get_pink_stylesheet())
     window = MetricComparisonGUI()
-    window.resize(1800, 800)
+    window.resize(2200, 800)
     window.show()
     sys.exit(app.exec_())
 
