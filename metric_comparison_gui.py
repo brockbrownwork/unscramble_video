@@ -32,14 +32,16 @@ from tv_wall import TVWall
 # ---------------------------------------------------------------------------
 
 class ClickableImagePanel(QLabel):
-    """QLabel that emits pixel coordinates on click and hover.
+    """QLabel that emits pixel coordinates on left-click and hover.
 
+    Supports zoom (mouse wheel) and pan (middle-mouse drag).
     Automatically scales the image to fit the available widget size while
     preserving the aspect ratio (nearest-neighbor for crisp pixels).
     """
 
     pixel_clicked = pyqtSignal(int, int)
     mouse_moved = pyqtSignal(int, int)
+    view_changed = pyqtSignal(float, float, float)  # zoom, pan_x, pan_y
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -56,6 +58,13 @@ class ClickableImagePanel(QLabel):
         self._pil_image = None   # original PIL image for re-scaling on resize
         self._image_data = None  # prevent GC of QImage buffer
 
+        # Zoom / pan state
+        self._zoom = 1.0          # extra zoom on top of fit-to-widget scale
+        self._pan_x = 0.0         # pan offset in wall-pixel coordinates
+        self._pan_y = 0.0
+        self._panning = False
+        self._pan_start = None    # QPoint of last middle-mouse position
+
     def set_image(self, pil_image, _scale=None):
         """Store the image and scale it to fit the current widget size."""
         self._pil_image = pil_image
@@ -63,24 +72,61 @@ class ClickableImagePanel(QLabel):
         self.wall_height = pil_image.height
         self._refresh_pixmap()
 
+    def reset_view(self):
+        """Reset zoom and pan to default (fit-to-widget)."""
+        self._zoom = 1.0
+        self._pan_x = 0.0
+        self._pan_y = 0.0
+        self._refresh_pixmap()
+
+    def set_view(self, zoom, pan_x, pan_y):
+        """Set zoom/pan without emitting view_changed (used for sync)."""
+        self._zoom = zoom
+        self._pan_x = pan_x
+        self._pan_y = pan_y
+        self._refresh_pixmap()
+
     def _refresh_pixmap(self):
-        """Rescale stored image to fit current widget dimensions."""
+        """Rescale and crop stored image to show the zoomed/panned view."""
         if self._pil_image is None:
             return
 
-        # Compute scale to fit within widget, preserving aspect ratio
         w = self.width() - 4   # account for border
         h = self.height() - 4
         if w <= 0 or h <= 0:
             return
-        scale_x = w / self._pil_image.width
-        scale_y = h / self._pil_image.height
-        self.display_scale = min(scale_x, scale_y)
 
-        new_w = max(1, int(self._pil_image.width * self.display_scale))
-        new_h = max(1, int(self._pil_image.height * self.display_scale))
+        # Base scale: fit whole image in widget
+        base_sx = w / self._pil_image.width
+        base_sy = h / self._pil_image.height
+        base_scale = min(base_sx, base_sy)
 
-        scaled = self._pil_image.resize((new_w, new_h), Image.Resampling.NEAREST)
+        # Effective scale includes zoom
+        eff_scale = base_scale * self._zoom
+        self.display_scale = eff_scale
+
+        # Visible region in wall-pixel coordinates
+        vis_w = w / eff_scale
+        vis_h = h / eff_scale
+
+        # Clamp pan so we don't scroll past image edges
+        max_pan_x = max(0.0, self._pil_image.width - vis_w)
+        max_pan_y = max(0.0, self._pil_image.height - vis_h)
+        self._pan_x = max(0.0, min(self._pan_x, max_pan_x))
+        self._pan_y = max(0.0, min(self._pan_y, max_pan_y))
+
+        # Crop the visible region from the source image
+        x0 = int(self._pan_x)
+        y0 = int(self._pan_y)
+        x1 = min(self._pil_image.width, int(self._pan_x + vis_w) + 1)
+        y1 = min(self._pil_image.height, int(self._pan_y + vis_h) + 1)
+
+        cropped = self._pil_image.crop((x0, y0, x1, y1))
+
+        new_w = max(1, int(cropped.width * eff_scale))
+        new_h = max(1, int(cropped.height * eff_scale))
+
+        scaled = cropped.resize((new_w, new_h), Image.Resampling.NEAREST)
         rgb = scaled.convert("RGB")
         self._image_data = rgb.tobytes("raw", "RGB")
         qimg = QImage(
@@ -94,23 +140,84 @@ class ClickableImagePanel(QLabel):
         self._refresh_pixmap()
 
     def _to_wall_coords(self, event):
-        px = int(event.x() / self.display_scale)
-        py = int(event.y() / self.display_scale)
+        px = int(event.x() / self.display_scale + self._pan_x)
+        py = int(event.y() / self.display_scale + self._pan_y)
         if 0 <= px < self.wall_width and 0 <= py < self.wall_height:
             return px, py
         return None
 
     def mousePressEvent(self, event):
-        coords = self._to_wall_coords(event)
-        if coords:
-            self.pixel_clicked.emit(*coords)
+        if event.button() == Qt.MiddleButton:
+            self._panning = True
+            self._pan_start = event.pos()
+            self.setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
+        if event.button() == Qt.LeftButton:
+            coords = self._to_wall_coords(event)
+            if coords:
+                self.pixel_clicked.emit(*coords)
         super().mousePressEvent(event)
 
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MiddleButton:
+            self._panning = False
+            self._pan_start = None
+            self.unsetCursor()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
     def mouseMoveEvent(self, event):
+        if self._panning and self._pan_start is not None:
+            delta = event.pos() - self._pan_start
+            self._pan_start = event.pos()
+            # Convert widget-pixel delta to wall-pixel delta
+            self._pan_x -= delta.x() / self.display_scale
+            self._pan_y -= delta.y() / self.display_scale
+            self._refresh_pixmap()
+            self.view_changed.emit(self._zoom, self._pan_x, self._pan_y)
+            event.accept()
+            return
         coords = self._to_wall_coords(event)
         if coords:
             self.mouse_moved.emit(*coords)
         super().mouseMoveEvent(event)
+
+    def wheelEvent(self, event):
+        if self._pil_image is None:
+            return
+
+        # Zoom towards cursor position
+        old_zoom = self._zoom
+        delta = event.angleDelta().y()
+        factor = 1.15 if delta > 0 else 1.0 / 1.15
+        new_zoom = max(1.0, min(old_zoom * factor, 100.0))
+
+        if new_zoom == old_zoom:
+            return
+
+        # Wall coords under cursor before zoom
+        mx = event.x() / self.display_scale + self._pan_x
+        my = event.y() / self.display_scale + self._pan_y
+
+        self._zoom = new_zoom
+
+        # Recompute effective scale
+        w = self.width() - 4
+        h = self.height() - 4
+        base_sx = w / self._pil_image.width
+        base_sy = h / self._pil_image.height
+        base_scale = min(base_sx, base_sy)
+        new_eff = base_scale * new_zoom
+
+        # Adjust pan so the wall point under cursor stays put
+        self._pan_x = mx - event.x() / new_eff
+        self._pan_y = my - event.y() / new_eff
+
+        self._refresh_pixmap()
+        self.view_changed.emit(self._zoom, self._pan_x, self._pan_y)
+        event.accept()
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +302,10 @@ class MetricComparisonGUI(QMainWindow):
 
         topn_layout.addStretch(1)
 
+        reset_zoom_btn = QPushButton("Reset Zoom")
+        reset_zoom_btn.clicked.connect(self._reset_zoom)
+        topn_layout.addWidget(reset_zoom_btn)
+
         plot_btn = QPushButton("Plot Avg Distance")
         plot_btn.clicked.connect(self._plot_avg_distance)
         topn_layout.addWidget(plot_btn)
@@ -247,6 +358,7 @@ class MetricComparisonGUI(QMainWindow):
         self.left_panel = ClickableImagePanel()
         self.left_panel.pixel_clicked.connect(self._on_pixel_clicked)
         self.left_panel.mouse_moved.connect(self._on_mouse_hover)
+        self.left_panel.view_changed.connect(self._sync_view)
         left_col.addWidget(self.left_panel)
 
         self.left_count_label = QLabel("")
@@ -265,6 +377,7 @@ class MetricComparisonGUI(QMainWindow):
         self.mid_panel = ClickableImagePanel()
         self.mid_panel.pixel_clicked.connect(self._on_pixel_clicked)
         self.mid_panel.mouse_moved.connect(self._on_mouse_hover)
+        self.mid_panel.view_changed.connect(self._sync_view)
         mid_col.addWidget(self.mid_panel)
 
         self.mid_count_label = QLabel("")
@@ -283,6 +396,7 @@ class MetricComparisonGUI(QMainWindow):
         self.right_panel = ClickableImagePanel()
         self.right_panel.pixel_clicked.connect(self._on_pixel_clicked)
         self.right_panel.mouse_moved.connect(self._on_mouse_hover)
+        self.right_panel.view_changed.connect(self._sync_view)
         right_col.addWidget(self.right_panel)
 
         self.right_count_label = QLabel("")
@@ -347,6 +461,21 @@ class MetricComparisonGUI(QMainWindow):
             f"Loaded {self.wall.width}×{self.wall.height} · "
             f"{self.wall.num_frames} frames · {total:,} pixels. Click a pixel!"
         )
+
+    # -----------------------------------------------------------------------
+    # Zoom / pan sync
+    # -----------------------------------------------------------------------
+
+    def _sync_view(self, zoom, pan_x, pan_y):
+        """Sync zoom/pan from the panel that changed to all others."""
+        sender = self.sender()
+        for panel in (self.left_panel, self.mid_panel, self.right_panel):
+            if panel is not sender:
+                panel.set_view(zoom, pan_x, pan_y)
+
+    def _reset_zoom(self):
+        for panel in (self.left_panel, self.mid_panel, self.right_panel):
+            panel.reset_view()
 
     # -----------------------------------------------------------------------
     # Click / hover
