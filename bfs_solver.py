@@ -37,6 +37,8 @@ CARDINAL_DELTAS = [(0, -1), (0, 1), (-1, 0), (1, 0)]
 ALL_DELTAS = [(-1, -1), (0, -1), (1, -1),
               (-1,  0),          (1,  0),
               (-1,  1), (0,  1), (1,  1)]
+KERNEL_5x5_DELTAS = [(dx, dy) for dy in range(-2, 3) for dx in range(-2, 3)
+                     if (dx, dy) != (0, 0)]
 
 
 class BFSSolver:
@@ -75,7 +77,12 @@ class BFSSolver:
         self.T = wall.num_frames
         self.total_pixels = self.H * self.W
 
-        self._deltas = CARDINAL_DELTAS if neighbor_mode == "cardinal" else ALL_DELTAS
+        if neighbor_mode == "cardinal":
+            self._deltas = CARDINAL_DELTAS
+        elif neighbor_mode == "5x5":
+            self._deltas = KERNEL_5x5_DELTAS
+        else:
+            self._deltas = ALL_DELTAS
 
         # Filled during _precompute
         self.all_series = None
@@ -91,6 +98,9 @@ class BFSSolver:
         self.in_frontier = None
         self.neighbor_count = None  # tracks # of placed neighbors per position
         self.insertion_counter = 0
+
+        # Mahalanobis state (populated in _precompute)
+        self._cov_inv_flat = None  # (H*W, 3, 3) inverse covariance per pixel
 
         # GPU state
         self._use_gpu = False
@@ -141,6 +151,23 @@ class BFSSolver:
         self._lum_order = np.argsort(luminance)       # pixel indices sorted by lum
         self._lum_sorted = luminance[self._lum_order]  # sorted luminance values
 
+        # Precompute per-pixel inverse covariance for Mahalanobis
+        if self.distance_metric == "mahalanobis":
+            print("  Computing per-pixel covariance inverses...")
+            # series_flat: (H*W, 3, T) — treat each pixel as T observations of 3 channels
+            N = self.total_pixels
+            C = 3
+            # Compute covariance per pixel: center, then cov = X @ X.T / (T-1)
+            means = self.series_flat.mean(axis=2, keepdims=True)  # (N, 3, 1)
+            centered = self.series_flat - means  # (N, 3, T)
+            # Batch covariance: (N, 3, T) @ (N, T, 3) -> (N, 3, 3)
+            cov = np.einsum('nct,ndt->ncd', centered, centered) / max(self.T - 1, 1)
+            # Regularise
+            cov += np.eye(C)[np.newaxis, :, :] * 1e-6
+            # Batch invert
+            self._cov_inv_flat = np.linalg.inv(cov)  # (N, 3, 3)
+            print(f"  Mahalanobis: precomputed {N} covariance inverses")
+
         # Transfer series to GPU once if available
         if self._use_gpu:
             cp = self._cp
@@ -181,7 +208,8 @@ class BFSSolver:
             return
 
         C = max(self.initial_candidates, K + 1)
-        candidates = self._find_closest_candidates(seed_series, C)
+        candidates = self._find_closest_candidates(seed_series, C,
+                                                    ref_idx=seed_idx)
 
         perm_count = math.perm(len(candidates), K)
 
@@ -225,11 +253,14 @@ class BFSSolver:
         for yx in placed_positions:
             self._expand_frontier((int(yx[1]), int(yx[0])))
 
-    def _find_closest_candidates(self, reference_series, count):
+    def _find_closest_candidates(self, reference_series, count, ref_idx=None):
         """Find top `count` unplaced pixels closest to reference_series.
 
         Uses GPU acceleration (CuPy) when available and the metric supports it.
         Falls back to CPU (NumPy) otherwise. Only called once (Phase 2).
+
+        For Mahalanobis, ref_idx is the flat pixel index of the reference pixel,
+        used to look up its precomputed inverse covariance.
         """
         unplaced_indices = np.where(self.is_unplaced)[0]
         if len(unplaced_indices) <= count:
@@ -246,6 +277,60 @@ class BFSSolver:
             top = np.argpartition(distances, count)[:count]
             top = top[np.argsort(distances[top])]
             return unplaced_indices[top].tolist()
+
+        # Mahalanobis: two-stage — GPU Euclidean coarse filter, then Mahalanobis rerank
+        if self.distance_metric == "mahalanobis":
+            RERANK_K = 500
+            coarse_count = max(count, RERANK_K)
+
+            # Stage 1: Euclidean coarse filter (GPU if available)
+            try:
+                import cupy as cp
+                use_gpu = True
+            except ImportError:
+                use_gpu = False
+
+            if use_gpu:
+                xp = cp
+                unplaced_series_dev = xp.asarray(self.series_flat[unplaced_indices])
+                ref_dev = xp.asarray(reference_series[np.newaxis, :, :])
+            else:
+                xp = np
+                unplaced_series_dev = self.series_flat[unplaced_indices]
+                ref_dev = reference_series[np.newaxis, :, :]
+
+            diff = unplaced_series_dev - ref_dev
+            euc_distances = xp.sqrt(xp.sum(diff ** 2, axis=(1, 2)))
+
+            k = min(coarse_count, len(unplaced_indices))
+            top_coarse = xp.argpartition(euc_distances, k)[:k]
+            top_coarse = top_coarse[xp.argsort(euc_distances[top_coarse])]
+
+            if use_gpu:
+                top_coarse = cp.asnumpy(top_coarse)
+                del unplaced_series_dev, ref_dev, diff, euc_distances
+                cp.get_default_memory_pool().free_all_blocks()
+
+            coarse_pixel_indices = unplaced_indices[top_coarse]
+
+            # Stage 2: Mahalanobis rerank on the narrowed set
+            if ref_idx is not None:
+                cov_inv = self._cov_inv_flat[ref_idx]  # (3, 3)
+            else:
+                colors = reference_series.T  # (T, 3)
+                cov = np.cov(colors, rowvar=False) + np.eye(3) * 1e-6
+                cov_inv = np.linalg.inv(cov)
+
+            coarse_series = self.series_flat[coarse_pixel_indices]  # (K, 3, T)
+            ref = reference_series[np.newaxis, :, :]  # (1, 3, T)
+            diff_t = (coarse_series - ref).transpose(0, 2, 1)  # (K, T, 3)
+            transformed = diff_t @ cov_inv  # (K, T, 3)
+            mahal_sq = np.sum(transformed * diff_t, axis=2)  # (K, T)
+            distances = np.sum(np.sqrt(np.maximum(mahal_sq, 0.0)), axis=1)  # (K,)
+
+            top = np.argpartition(distances, count)[:count]
+            top = top[np.argsort(distances[top])]
+            return coarse_pixel_indices[top].tolist()
 
         # GPU path for vectorizable metrics
         try:
@@ -318,9 +403,11 @@ class BFSSolver:
                     edge = (min(pos, npos), max(pos, npos))
                     if edge not in counted:
                         counted.add(edge)
+                        npix = temp[npos]
                         total += self._compute_pairwise_distance(
                             self.series_flat[pix],
-                            self.series_flat[temp[npos]],
+                            self.series_flat[npix],
+                            idx_a=pix, idx_b=npix,
                         )
         return total
 
@@ -440,7 +527,8 @@ class BFSSolver:
         for nx, ny in placed_neighbor_positions:
             n_idx = self.placed_at[ny, nx]
             total += self._compute_pairwise_distance(
-                cand_series, self.series_flat[n_idx]
+                cand_series, self.series_flat[n_idx],
+                idx_a=candidate_idx, idx_b=n_idx,
             )
         return total / len(placed_neighbor_positions)
 
@@ -471,6 +559,41 @@ class BFSSolver:
                     best_score = score
                     best_idx = cand_idx
             return best_idx, best_score
+
+        if self.distance_metric == "mahalanobis":
+            # Two-stage: GPU Euclidean to top 500, then CPU Mahalanobis rerank.
+            RERANK_K = 500
+            if S > RERANK_K:
+                # Stage 1: GPU-accelerated Euclidean to narrow candidates
+                if self._use_gpu and self._series_flat_gpu is not None:
+                    top_k_indices, _ = self._euclidean_top_k_gpu(
+                        cand_indices, neighbor_pixel_indices, RERANK_K)
+                else:
+                    top_k_indices, _ = self._euclidean_top_k_cpu(
+                        cand_indices, neighbor_pixel_indices, RERANK_K)
+                # Recurse with narrowed set
+                return self._evaluate_shortlist_batch(
+                    top_k_indices.tolist(), placed_neighbor_positions)
+
+            # Stage 2: Full Mahalanobis on the narrowed set (S <= 500)
+            cand_series = self.series_flat[cand_indices]       # (S, 3, T)
+            neigh_series = self.series_flat[neighbor_pixel_indices]  # (N, 3, T)
+
+            diff = cand_series[:, np.newaxis, :, :] - neigh_series[np.newaxis, :, :, :]
+            diff_t = diff.transpose(0, 1, 3, 2)  # (S, N, T, 3)
+
+            neigh_cov_inv = self._cov_inv_flat[neighbor_pixel_indices]  # (N, 3, 3)
+
+            transformed = np.einsum('sntc,ncd->sntd', diff_t,
+                                    neigh_cov_inv)  # (S, N, T, 3)
+
+            mahal_sq = np.sum(transformed * diff_t, axis=3)  # (S, N, T)
+            distances = np.sum(np.sqrt(np.maximum(mahal_sq, 0.0)),
+                               axis=2)  # (S, N)
+
+            mean_distances = distances.mean(axis=1)  # (S,)
+            best_local = int(np.argmin(mean_distances))
+            return shortlist[best_local], float(mean_distances[best_local])
 
         # GPU per-call overhead (~1ms) outweighs compute for typical S*N sizes.
         # Only use GPU when the workload is very large (e.g. S=1000+ candidates).
@@ -542,8 +665,57 @@ class BFSSolver:
         best_score = float(mean_distances[best_local].get())
         return int(cand_indices[best_local]), best_score
 
-    def _compute_pairwise_distance(self, series_a, series_b):
-        """Distance between two series of shape (3, T)."""
+    def _euclidean_top_k_gpu(self, cand_indices, neighbor_pixel_indices, k):
+        """GPU Euclidean to select top-k candidates from a larger shortlist.
+
+        Returns (top_k_pixel_indices, top_k_scores) as numpy arrays.
+        """
+        cp = self._cp
+        S = len(cand_indices)
+        k = min(k, S)
+
+        cand_series = self._series_flat_gpu[cand_indices]           # (S, 3, T)
+        neigh_series = self._series_flat_gpu[neighbor_pixel_indices] # (N, 3, T)
+
+        diff = cand_series[:, cp.newaxis, :, :] - neigh_series[cp.newaxis, :, :, :]
+        distances = cp.sqrt(cp.sum(diff ** 2, axis=(2, 3)))  # (S, N)
+        mean_distances = distances.mean(axis=1)               # (S,)
+
+        top_k = cp.argpartition(mean_distances, k)[:k]
+        top_k = top_k[cp.argsort(mean_distances[top_k])]
+        top_k_cpu = cp.asnumpy(top_k)
+        scores = cp.asnumpy(mean_distances[top_k])
+
+        return cand_indices[top_k_cpu], scores
+
+    def _euclidean_top_k_cpu(self, cand_indices, neighbor_pixel_indices, k):
+        """CPU Euclidean to select top-k candidates from a larger shortlist.
+
+        Returns (top_k_pixel_indices, top_k_scores) as numpy arrays.
+        """
+        S = len(cand_indices)
+        k = min(k, S)
+
+        cand_series = self.series_flat[cand_indices]           # (S, 3, T)
+        neigh_series = self.series_flat[neighbor_pixel_indices] # (N, 3, T)
+
+        diff = cand_series[:, np.newaxis, :, :] - neigh_series[np.newaxis, :, :, :]
+        distances = np.sqrt(np.sum(diff ** 2, axis=(2, 3)))  # (S, N)
+        mean_distances = distances.mean(axis=1)               # (S,)
+
+        top_k = np.argpartition(mean_distances, k)[:k]
+        top_k = top_k[np.argsort(mean_distances[top_k])]
+
+        return cand_indices[top_k], mean_distances[top_k]
+
+    def _compute_pairwise_distance(self, series_a, series_b,
+                                    idx_a=None, idx_b=None):
+        """Distance between two series of shape (3, T).
+
+        For Mahalanobis, idx_a and idx_b are flat pixel indices used to look up
+        precomputed inverse covariance matrices.  Uses the average of both
+        covariances for a symmetric distance.
+        """
         if self.distance_metric == "euclidean":
             diff = series_a - series_b
             return float(np.sqrt(np.sum(diff ** 2)))
@@ -565,6 +737,24 @@ class BFSSolver:
         elif self.distance_metric == "dtw":
             from aeon.distances import dtw_distance
             return float(dtw_distance(series_a, series_b, window=self.dtw_window))
+        elif self.distance_metric == "mahalanobis":
+            diff = (series_a - series_b).T  # (T, 3)
+            # Average covariance of both pixels for symmetry
+            if idx_a is not None and idx_b is not None:
+                cov_inv = (self._cov_inv_flat[idx_a] + self._cov_inv_flat[idx_b]) * 0.5
+            elif idx_a is not None:
+                cov_inv = self._cov_inv_flat[idx_a]
+            elif idx_b is not None:
+                cov_inv = self._cov_inv_flat[idx_b]
+            else:
+                # Fallback: compute from series_a
+                colors = series_a.T  # (T, 3)
+                cov = np.cov(colors, rowvar=False) + np.eye(3) * 1e-6
+                cov_inv = np.linalg.inv(cov)
+            # Per-frame Mahalanobis: sqrt(Δc^T @ Σ^-1 @ Δc), summed over frames
+            transformed = diff @ cov_inv  # (T, 3)
+            mahal_sq = np.sum(transformed * diff, axis=1)  # (T,)
+            return float(np.sum(np.sqrt(np.maximum(mahal_sq, 0.0))))
         else:
             raise ValueError(f"Unknown metric: {self.distance_metric}")
 
@@ -839,7 +1029,7 @@ def run_pygame_gui(solver, wall, args):
                 "",
                 f"Metric: {solver.distance_metric}",
                 f"Shortlist: {'off' if not solver.shortlist_size else solver.shortlist_size}",
-                f"Mode: {solver.neighbor_mode}",
+                f"Mode: {solver.neighbor_mode} ({len(solver._deltas)} neighbors)",
             ]
 
             y_off = 10
@@ -883,7 +1073,7 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    parser.add_argument("-v", "--video", type=str, required=True,
+    parser.add_argument("-v", "--video", type=str, default="cab_ride_trimmed.mkv",
                         help="Input video file")
     parser.add_argument("-f", "--frames", type=int, default=100,
                         help="Number of frames to load")
@@ -900,10 +1090,10 @@ def parse_args():
     parser.add_argument("--seed-position", type=str, default="random",
                         help='Seed pixel position: "random" or "x,y"')
     parser.add_argument("--neighbor-mode", type=str, default="all",
-                        choices=["cardinal", "all"],
-                        help="Neighbor connectivity: cardinal (4) or all (8)")
+                        choices=["cardinal", "all", "5x5"],
+                        help="Neighbor connectivity: cardinal (4), all (8), or 5x5 (24)")
     parser.add_argument("--metric", type=str, default="euclidean",
-                        choices=["euclidean", "squared", "manhattan", "cosine", "dtw"],
+                        choices=["euclidean", "squared", "manhattan", "cosine", "dtw", "mahalanobis"],
                         help="Distance metric")
     parser.add_argument("--dtw-window", type=float, default=0.1,
                         help="DTW Sakoe-Chiba window (0.0-1.0)")
