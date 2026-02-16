@@ -439,6 +439,15 @@ The solver operates in four phases:
 
 The `_find_closest_candidates()` method uses CuPy when available to compute distances from a reference series to all unplaced pixels in parallel on the GPU. Supported GPU metrics: euclidean, squared, manhattan, cosine. DTW falls back to CPU.
 
+### Mahalanobis Two-Stage Pipeline
+
+When using `--metric mahalanobis`, the BFS solver uses a hybrid two-stage approach to combine GPU speed with Mahalanobis accuracy:
+
+1. **Stage 1 — GPU Euclidean coarse filter**: Computes flattened Euclidean distance on the GPU to narrow the candidate set to the top 500 closest pixels.
+2. **Stage 2 — CPU Mahalanobis rerank**: Evaluates the 500 candidates using the full per-frame Mahalanobis distance (weighted by neighbor inverse covariance), then picks the best.
+
+This applies to both `_find_closest_candidates()` (Phase 2 seed neighborhood) and `_evaluate_shortlist_batch()` (Phase 3 BFS expansion). Falls back to CPU Euclidean for Stage 1 when CuPy is not available.
+
 ### CLI Usage
 
 ```bash

@@ -185,6 +185,14 @@ class MetricComparisonGUI(QMainWindow):
         self.topn_spin.valueChanged.connect(self._on_topn_changed)
         topn_layout.addWidget(self.topn_spin)
 
+        topn_layout.addWidget(QLabel("Layer:"))
+        self.layer_spin = QSpinBox()
+        self.layer_spin.setRange(0, 1000)
+        self.layer_spin.setValue(0)
+        self.layer_spin.setSpecialValueText("Off")
+        self.layer_spin.valueChanged.connect(self._on_layer_changed)
+        topn_layout.addWidget(self.layer_spin)
+
         topn_layout.addStretch(1)
 
         plot_btn = QPushButton("Plot Avg Distance")
@@ -499,14 +507,47 @@ class MetricComparisonGUI(QMainWindow):
         sphericity = np.sqrt(compactness * fill_rate) * 100.0
         return sphericity
 
-    def _create_overlay_image(self, distances, top_n):
-        """Return PIL Image with semi-transparent grey on the top-N least dissonant pixels."""
+    def _get_layer_mask(self, distances, layer):
+        """Return boolean mask (H, W) of pixels in the given layer (rank range)."""
+        if layer <= 0:
+            return None
+        start, end, count = self._get_layer_range(layer)
+        if count == 0:
+            return None
+        flat = distances.ravel()
+        # start/end are 1-based ranks
+        if start > flat.size:
+            return None
+        end = min(end, flat.size)
+        # argpartition at `end` gives us the `end` smallest in indices[:end],
+        # then argsort that subset to get proper ordering for the rank slice.
+        part_idx = np.argpartition(flat, end)[:end]
+        # Sort those by distance to get true ranks 1..end
+        sub_order = np.argsort(flat[part_idx])
+        ordered = part_idx[sub_order]
+        layer_indices = ordered[start - 1:end]
+        mask = np.zeros(distances.shape, dtype=bool)
+        ys, xs = np.unravel_index(layer_indices, distances.shape)
+        mask[ys, xs] = True
+        return mask
+
+    def _create_overlay_image(self, distances, top_n, layer=0):
+        """Return PIL Image with semi-transparent grey on the top-N least dissonant pixels.
+
+        If *layer* > 0, pixels in that concentric layer are highlighted in red.
+        """
         base = np.array(self.base_frame_image).astype(np.float32)  # (H, W, 3)
         mask = self._get_topn_mask(distances, top_n)
 
         alpha = 0.5
         grey = np.array([200, 200, 200], dtype=np.float32)
         base[mask] = base[mask] * (1.0 - alpha) + grey * alpha
+
+        # Overlay layer pixels in red
+        layer_mask = self._get_layer_mask(distances, layer)
+        if layer_mask is not None:
+            red = np.array([255, 60, 60], dtype=np.float32)
+            base[layer_mask] = base[layer_mask] * (1.0 - 0.7) + red * 0.7
 
         # Mark clicked pixel with a cyan cross
         if self.clicked_pixel is not None:
@@ -567,29 +608,65 @@ class MetricComparisonGUI(QMainWindow):
             return
 
         top_n = self.topn_spin.value()
+        layer = self.layer_spin.value()
         total = self.wall.width * self.wall.height
 
-        left_img = self._create_overlay_image(self.flat_dists, top_n)
+        # Compute layer info string once (same for all metrics)
+        layer_info = ""
+        if layer > 0:
+            start, end, count = self._get_layer_range(layer)
+            layer_info = f"  |  Layer {layer}: ranks {start}–{end} ({count} px)"
+
+        left_img = self._create_overlay_image(self.flat_dists, top_n, layer)
         self.left_panel.set_image(left_img)
         self.left_count_label.setText(
-            self._format_label(self.flat_dists, top_n, total)
+            self._format_label(self.flat_dists, top_n, total) + layer_info
         )
 
-        mid_img = self._create_overlay_image(self.color_dists, top_n)
+        mid_img = self._create_overlay_image(self.color_dists, top_n, layer)
         self.mid_panel.set_image(mid_img)
         self.mid_count_label.setText(
-            self._format_label(self.color_dists, top_n, total)
+            self._format_label(self.color_dists, top_n, total) + layer_info
         )
 
         if self.mahal_dists is not None:
-            right_img = self._create_overlay_image(self.mahal_dists, top_n)
+            right_img = self._create_overlay_image(self.mahal_dists, top_n, layer)
             self.right_panel.set_image(right_img)
             self.right_count_label.setText(
-                self._format_label(self.mahal_dists, top_n, total)
+                self._format_label(self.mahal_dists, top_n, total) + layer_info
             )
 
     def _on_topn_changed(self, value):
         self._update_overlay()
+
+    def _on_layer_changed(self, value):
+        self._update_overlay()
+
+    @staticmethod
+    def _get_layer_range(target_r):
+        """Compute the rank range for a concentric layer at radius *target_r*.
+
+        Layer 0 is the clicked pixel itself (rank 1–1).  Layer 1 contains the
+        pixels whose rounded Euclidean distance equals 1 (ranks 2–9 for a
+        standard grid), and so on.
+
+        Returns (start, end, count) where *start* and *end* are 1-based ranks.
+        """
+        if target_r < 0:
+            return (0, 0, 0)
+
+        cumulative_before = 0
+        count_in_target = 0
+        bound = target_r + 1
+        for y in range(-bound, bound + 1):
+            for x in range(-bound, bound + 1):
+                dist = (x * x + y * y) ** 0.5
+                r = round(dist)
+                if r < target_r:
+                    cumulative_before += 1
+                elif r == target_r:
+                    count_in_target += 1
+        return (cumulative_before + 1, cumulative_before + count_in_target, count_in_target)
 
     def _on_frame_changed(self, frame_idx):
         if self.wall is None:
@@ -737,9 +814,10 @@ class MetricComparisonGUI(QMainWindow):
     def _save_to_path(self, filepath):
         """Save the combined 3-panel figure to the given path."""
         top_n = self.topn_spin.value()
-        left = self._create_overlay_image(self.flat_dists, top_n)
-        mid = self._create_overlay_image(self.color_dists, top_n)
-        right = self._create_overlay_image(self.mahal_dists, top_n)
+        layer = self.layer_spin.value()
+        left = self._create_overlay_image(self.flat_dists, top_n, layer)
+        mid = self._create_overlay_image(self.color_dists, top_n, layer)
+        right = self._create_overlay_image(self.mahal_dists, top_n, layer)
 
         s = 2.0
         pw = int(left.width * s)
