@@ -8,7 +8,7 @@ This document contains some relevant thoughts and resources to the Video Unscram
 </figure>
 <figure style="display: table">
   <img src="C:\Users\Brock\Documents\code\unscramble_video\bfs_output\common_edges\common_edges_heatmap.png" alt="common edges heatmap" />
-  <figcaption style="display: table-caption; caption-side: bottom"><em>Heatmap of persistent edges detected across all frames of the BFS reconstruction. Brighter regions indicate edges that appear consistently across many frames. The non-uniform distribution reveals boundary artifacts from misplaced pixels.</em></figcaption>
+  <figcaption style="display: table-caption; caption-side: bottom"><em>Heatmap of persistent edges detected across all frames of the BFS reconstruction of the above video. Brighter regions indicate edges that appear consistently across many frames. The non-uniform distribution reveals boundary artifacts from misplaced pixels.</em></figcaption>
 </figure>
 
 
