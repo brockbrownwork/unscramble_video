@@ -238,6 +238,12 @@ class MetricComparisonGUI(QMainWindow):
         self.color_dists = None     # (H, W) float32
         self.mahal_dists = None         # (H, W) float32
 
+        # Cached overlay data (recomputed on click/top-N/layer change, NOT on frame change)
+        self._cached_masks = None       # list of 3 bool (H, W) masks
+        self._cached_layer_masks = None # list of 3 bool (H, W) masks or None
+        self._cached_circle_info = None # list of 3 (radius, ...) tuples
+        self._cached_labels = None      # list of 3 label strings
+
         self._setup_ui()
 
     # -----------------------------------------------------------------------
@@ -441,6 +447,10 @@ class MetricComparisonGUI(QMainWindow):
         self.flat_dists = None
         self.color_dists = None
         self.mahal_dists = None
+        self._cached_masks = None
+        self._cached_layer_masks = None
+        self._cached_circle_info = None
+        self._cached_labels = None
 
         # Configure frame slider
         self.frame_slider.setRange(0, self.wall.num_frames - 1)
@@ -672,19 +682,19 @@ class MetricComparisonGUI(QMainWindow):
         grey = np.array([200, 200, 200], dtype=np.float32)
         base[mask] = base[mask] * (1.0 - alpha) + grey * alpha
 
-        # Overlay layer pixels in red
-        layer_mask = self._get_layer_mask(distances, layer)
-        if layer_mask is not None:
-            red = np.array([255, 60, 60], dtype=np.float32)
-            base[layer_mask] = base[layer_mask] * (1.0 - 0.7) + red * 0.7
-
-        # Mark clicked pixel with a cyan cross
+        # Mark clicked pixel with a cyan cross (drawn before layer so layer is on top)
         if self.clicked_pixel is not None:
             cx, cy = self.clicked_pixel
             for dx, dy in [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)]:
                 nx, ny = cx + dx, cy + dy
                 if 0 <= nx < self.wall.width and 0 <= ny < self.wall.height:
                     base[ny, nx] = [0, 255, 255]
+
+        # Overlay layer pixels in red (drawn last so they're visible on top)
+        layer_mask = self._get_layer_mask(distances, layer)
+        if layer_mask is not None:
+            red = np.array([255, 60, 60], dtype=np.float32)
+            base[layer_mask] = base[layer_mask] * (1.0 - 0.7) + red * 0.7
 
         img = Image.fromarray(base.astype(np.uint8), "RGB")
 
@@ -732,38 +742,90 @@ class MetricComparisonGUI(QMainWindow):
             text += f"  |  Sphericity: {sphericity:.1f}"
         return text
 
-    def _update_overlay(self):
+    def _rebuild_overlay_cache(self):
+        """Recompute cached masks, circle info, and labels from distance arrays.
+
+        Called when clicked pixel, top-N, or layer changes — but NOT on frame change.
+        """
         if self.flat_dists is None:
+            self._cached_masks = None
             return
 
         top_n = self.topn_spin.value()
         layer = self.layer_spin.value()
         total = self.wall.width * self.wall.height
 
-        # Compute layer info string once (same for all metrics)
+        all_dists = [self.flat_dists, self.color_dists, self.mahal_dists]
+
+        self._cached_masks = [self._get_topn_mask(d, top_n) for d in all_dists]
+        self._cached_layer_masks = [self._get_layer_mask(d, layer) for d in all_dists]
+        self._cached_circle_info = [self._compute_circle_coverage(d, top_n) for d in all_dists]
+
         layer_info = ""
         if layer > 0:
             start, end, count = self._get_layer_range(layer)
             layer_info = f"  |  Layer {layer}: ranks {start}–{end} ({count} px)"
 
-        left_img = self._create_overlay_image(self.flat_dists, top_n, layer)
-        self.left_panel.set_image(left_img)
-        self.left_count_label.setText(
-            self._format_label(self.flat_dists, top_n, total) + layer_info
-        )
+        self._cached_labels = [
+            self._format_label(d, top_n, total) + layer_info for d in all_dists
+        ]
 
-        mid_img = self._create_overlay_image(self.color_dists, top_n, layer)
-        self.mid_panel.set_image(mid_img)
-        self.mid_count_label.setText(
-            self._format_label(self.color_dists, top_n, total) + layer_info
-        )
+    def _composite_overlay_fast(self, mask, layer_mask, circle_info):
+        """Build overlay image from cached mask data and current base_frame_image."""
+        base = np.array(self.base_frame_image).astype(np.float32)
 
-        if self.mahal_dists is not None:
-            right_img = self._create_overlay_image(self.mahal_dists, top_n, layer)
-            self.right_panel.set_image(right_img)
-            self.right_count_label.setText(
-                self._format_label(self.mahal_dists, top_n, total) + layer_info
+        alpha = 0.5
+        grey = np.array([200, 200, 200], dtype=np.float32)
+        base[mask] = base[mask] * (1.0 - alpha) + grey * alpha
+
+        if self.clicked_pixel is not None:
+            cx, cy = self.clicked_pixel
+            for dx, dy in [(0, 0), (-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = cx + dx, cy + dy
+                if 0 <= nx < self.wall.width and 0 <= ny < self.wall.height:
+                    base[ny, nx] = [0, 255, 255]
+
+        if layer_mask is not None:
+            red = np.array([255, 60, 60], dtype=np.float32)
+            base[layer_mask] = base[layer_mask] * (1.0 - 0.7) + red * 0.7
+
+        img = Image.fromarray(base.astype(np.uint8), "RGB")
+
+        if self.clicked_pixel is not None and circle_info is not None:
+            radius = circle_info[0]
+            if radius >= 0.5:
+                cx, cy = self.clicked_pixel
+                draw = ImageDraw.Draw(img)
+                draw.ellipse(
+                    [cx - radius, cy - radius, cx + radius, cy + radius],
+                    outline=(0, 255, 255), width=1,
+                )
+
+        return img
+
+    def _update_overlay(self):
+        if self.flat_dists is None:
+            return
+
+        self._rebuild_overlay_cache()
+        self._apply_overlay_to_panels()
+
+    def _apply_overlay_to_panels(self):
+        """Composite cached masks onto the current base frame and update panels."""
+        if self._cached_masks is None:
+            return
+
+        panels = [self.left_panel, self.mid_panel, self.right_panel]
+        labels = [self.left_count_label, self.mid_count_label, self.right_count_label]
+
+        for i, (panel, label) in enumerate(zip(panels, labels)):
+            img = self._composite_overlay_fast(
+                self._cached_masks[i],
+                self._cached_layer_masks[i],
+                self._cached_circle_info[i],
             )
+            panel.set_image(img)
+            label.setText(self._cached_labels[i])
 
     def _on_topn_changed(self, value):
         self._update_overlay()
@@ -802,8 +864,9 @@ class MetricComparisonGUI(QMainWindow):
             return
         self.frame_label.setText(f"Frame: {frame_idx}")
         self.base_frame_image = self.wall.get_frame_image(frame_idx)
-        if self.flat_dists is not None:
-            self._update_overlay()
+        if self._cached_masks is not None:
+            # Fast path: reuse cached masks/labels, just re-composite onto new frame
+            self._apply_overlay_to_panels()
         else:
             self.left_panel.set_image(self.base_frame_image)
             self.mid_panel.set_image(self.base_frame_image)
