@@ -46,6 +46,7 @@ unscramble_video/
 ├── neighbor_dissonance_gui.py         # Interactive dissonance visualization
 ├── greedy_solver_gui_pyqt.py          # Interactive solver (PyQt5, cute pink theme)
 ├── metric_comparison_gui.py            # Side-by-side metric comparison (Flattened Euclidean, Summed Color, Mahalanobis)
+├── generate_stimulus.py               # Synthetic stimulus video generator (floating colored balls)
 ├── common_edges.py                    # Persistent edge detection across frames
 ├── compare_metrics.py                 # CLI tool comparing 4 metrics + shuffled vs correct distributions + overlap analysis
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
@@ -81,6 +82,11 @@ python benchmark_gpu.py
 
 # Find persistent edges across video frames
 python common_edges.py -i path/to/frames/ -t 0.4
+
+# Generate synthetic stimulus video (colorful floating balls on shifting background)
+python generate_stimulus.py -o stimulus.mkv --frames 10000 --seed 42
+python generate_stimulus.py -o stimulus.mkv --frames 10000 --motion brownian --num-balls 500
+python generate_stimulus.py -o stimulus.mkv --frames 10000 --spawn-rate 3.0 --decay-end 0.8
 ```
 
 ## Key Concepts
