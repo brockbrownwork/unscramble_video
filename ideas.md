@@ -13,6 +13,7 @@ This document contains some relevant thoughts and resources to the Video Unscram
 
 
 
+
 ## Interesting and relevant resources:
 
 ### [Assembling Jigsaw Puzzles](https://cvgl.stanford.edu/teaching/cs231a_winter1415/prev/projects/JigsawPuzzle.pdf)

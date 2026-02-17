@@ -47,6 +47,7 @@ unscramble_video/
 ├── greedy_solver_gui_pyqt.py          # Interactive solver (PyQt5, cute pink theme)
 ├── metric_comparison_gui.py            # Side-by-side metric comparison (Flattened Euclidean, Summed Color, Mahalanobis)
 ├── generate_stimulus.py               # Synthetic stimulus video generator (floating colored balls)
+├── generate_flow_stimulus.py          # Procedural flow-field stimulus generator (animated noise + waves)
 ├── common_edges.py                    # Persistent edge detection across frames
 ├── compare_metrics.py                 # CLI tool comparing 4 metrics + shuffled vs correct distributions + overlap analysis
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
@@ -87,6 +88,11 @@ python common_edges.py -i path/to/frames/ -t 0.4
 python generate_stimulus.py -o stimulus.mkv --frames 10000 --seed 42
 python generate_stimulus.py -o stimulus.mkv --frames 10000 --motion brownian --num-balls 500
 python generate_stimulus.py -o stimulus.mkv --frames 10000 --spawn-rate 3.0 --decay-end 0.8
+
+# Generate procedural flow-field stimulus (animated noise + wave interference)
+python generate_flow_stimulus.py -o flow_stimulus.mkv --frames 10000 --seed 42
+python generate_flow_stimulus.py --preset hard --seed 42
+python generate_flow_stimulus.py --noise-scale 5 --num-octaves 8 --flow-strength 0.5
 ```
 
 ## Key Concepts
@@ -585,6 +591,52 @@ frequency_map, binary_edges = detect_common_edges(
 
 - Commit prefixes: `feat:`, `chore:`, `fix:`, `docs:`
 - Keep notebooks and generated media out of git (see .gitignore)
+
+## Flow-Field Stimulus Generator (`generate_flow_stimulus.py`)
+
+A procedural stimulus generator that creates rich, spatially-coherent video using layered animated noise fields and standing-wave interference, warped by a smooth flow field. Unlike the ball-based stimulus, **every pixel** has a unique temporal color signature with no dead zones.
+
+### How It Works
+
+The color at each pixel is computed from three layered systems:
+
+1. **Harmonic Noise Base** — Sum of sinusoidal octaves at increasing frequencies (1/f noise). Each R, G, B channel uses **independent phase offsets, rotation angles, and slightly different frequency ladders** (1.0x, 1.15x, 0.85x scaling). This creates spatially-varying channel covariance — exactly the structure Mahalanobis distance exploits.
+
+2. **Flow-Field Warping** — A velocity field (also from harmonic noise, at lower frequencies) displaces the sampling coordinates, creating swirling organic motion patterns. Neighboring pixels experience similar flow, preserving spatial correlation while adding temporal variety.
+
+3. **Standing Wave Interference** — Overlaid sinusoidal patterns at various angles and frequencies create moire-like textures with high spatial frequency content. Per-channel mixing weights add further channel decorrelation.
+
+### Key Properties
+
+| Property | Value |
+|----------|-------|
+| Color entropy | ~7.25 (very high) |
+| Mean channel correlation | R-G: 0.32, R-B: 0.17, G-B: 0.24 |
+| Spatial gradient | Adjacent ~160, 10px away ~890 (Euclidean) |
+| Dead zones | None — entire frame is information-rich |
+| Generation speed | ~11 fps at 320x180, ~1 fps at 1280x720 |
+
+### Parametric Difficulty
+
+| Parameter | Effect | Easy | Hard |
+|-----------|--------|------|------|
+| `--noise-scale` | Spatial frequency | 2.0 (blobs) | 5.0 (fine) |
+| `--num-octaves` | Texture complexity | 4 | 8 |
+| `--temporal-speed` | Noise evolution rate | 0.005 | 0.02 |
+| `--flow-strength` | Warp magnitude | 0.15 | 0.5 |
+| `--num-waves` | Interference patterns | 2 | 6 |
+
+### Presets
+
+```bash
+python generate_flow_stimulus.py --preset easy --seed 42   # Large blobs, slow change
+python generate_flow_stimulus.py --preset medium --seed 42  # Default balanced
+python generate_flow_stimulus.py --preset hard --seed 42    # Fine texture, fast flow
+```
+
+### Why This Stimulus Matters for Mahalanobis
+
+The ball stimulus creates similar R/G/B correlations at most pixels (all three channels track the same gradient). The flow stimulus creates **spatially-varying covariance** — at some pixels R and G are correlated while B is anti-correlated; at others the pattern reverses. This is the regime where Mahalanobis distance outperforms Euclidean, because it weights each channel pair by its local covariance structure.
 
 ## Ideas
 

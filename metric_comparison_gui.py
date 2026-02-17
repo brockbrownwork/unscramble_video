@@ -369,6 +369,7 @@ class MetricComparisonGUI(QMainWindow):
 
         self.left_count_label = QLabel("")
         self.left_count_label.setAlignment(Qt.AlignCenter)
+        self.left_count_label.setWordWrap(True)
         left_col.addWidget(self.left_count_label)
 
         panels_layout.addLayout(left_col)
@@ -388,6 +389,7 @@ class MetricComparisonGUI(QMainWindow):
 
         self.mid_count_label = QLabel("")
         self.mid_count_label.setAlignment(Qt.AlignCenter)
+        self.mid_count_label.setWordWrap(True)
         mid_col.addWidget(self.mid_count_label)
 
         panels_layout.addLayout(mid_col)
@@ -407,6 +409,7 @@ class MetricComparisonGUI(QMainWindow):
 
         self.right_count_label = QLabel("")
         self.right_count_label.setAlignment(Qt.AlignCenter)
+        self.right_count_label.setWordWrap(True)
         right_col.addWidget(self.right_count_label)
 
         panels_layout.addLayout(right_col)
@@ -726,21 +729,43 @@ class MetricComparisonGUI(QMainWindow):
         spatial_dists = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2)
         return float(spatial_dists.mean())
 
-    def _format_label(self, distances, top_n, total):
-        """Build the label string including avg distance, circle coverage, and sphericity."""
-        avg = self._avg_spatial_distance(distances, top_n)
-        text = f"Top {top_n:,} / {total:,}  |  Avg dist: {avg:.1f} px"
+    def _avg_metric_distance(self, distances, top_n):
+        """Average metric distance of the top-N least dissonant pixels."""
+        flat = distances.ravel()
+        n = min(top_n, flat.size)
+        top_indices = np.argpartition(flat, n)[:n]
+        return float(flat[top_indices].mean())
 
+    def _max_metric_distance(self, distances, top_n):
+        """Max metric distance among the top-N least dissonant pixels."""
+        flat = distances.ravel()
+        n = min(top_n, flat.size)
+        top_indices = np.argpartition(flat, n)[:n]
+        return float(flat[top_indices].max())
+
+    def _format_label(self, distances, top_n, total):
+        """Build a two-line label string.
+
+        Line 1: counts and distance averages
+        Line 2: circle coverage and sphericity
+        """
+        avg = self._avg_spatial_distance(distances, top_n)
+        avg_metric = self._avg_metric_distance(distances, top_n)
+        furthest = self._max_metric_distance(distances, top_n)
+        line1 = f"Top {top_n:,} / {total:,}  |  Avg metric dist: {avg_metric:.1f}  |  Furthest: {furthest:.1f}  |  Avg spatial dist: {avg:.1f} px"
+
+        line2_parts = []
         info = self._compute_circle_coverage(distances, top_n)
         if info is not None:
             radius, circle_px, topn_in, pct = info
-            text += (f"  |  Circle r={radius:.1f}: "
-                     f"{topn_in:,}/{circle_px:,} = {pct:.1f}%")
+            line2_parts.append(f"Circle r={radius:.1f}: {topn_in:,}/{circle_px:,} = {pct:.1f}%")
 
         sphericity = self._compute_circle_sphericity(distances, top_n)
         if sphericity is not None:
-            text += f"  |  Sphericity: {sphericity:.1f}"
-        return text
+            line2_parts.append(f"Sphericity: {sphericity:.1f}")
+
+        line2 = "  |  ".join(line2_parts) if line2_parts else ""
+        return f"{line1}\n{line2}" if line2 else line1
 
     def _rebuild_overlay_cache(self):
         """Recompute cached masks, circle info, and labels from distance arrays.

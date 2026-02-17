@@ -29,7 +29,8 @@
       "Bash(ffmpeg:*)",
       "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" diff ideas.md)",
       "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" add ideas.md)",
-      "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" commit -m \"$\\(cat <<''EOF''\ndocs: add heatmap figure, autoplay video, and constrain caption widths\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git -C \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\" commit -m \"$\\(cat <<''EOF''\ndocs: add heatmap figure, autoplay video, and constrain caption widths\n\nCo-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(start \"\" \"C:\\\\Users\\\\Brock\\\\Documents\\\\code\\\\unscramble_video\\\\pinwheel_solver.md\")"
     ]
   }
 }
