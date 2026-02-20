@@ -180,8 +180,8 @@ Step 4: Continue BFS...
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `pinwheel_radius` | Number of rings per pinwheel | 5 |
-| `placement_mode` | `"edge"` or `"midpoint"` | `"midpoint"` |
-| `distance_metric` | Metric for ranking pixels to center | `"euclidean"` |
+| `placement_mode` | `"edge"` or `"midpoint"` | `"edge"` |
+| `distance_metric` | Metric for ranking pixels to center | `"summed color distance"` |
 | `tsp_method` | TSP solver for ring ordering | `"nearest_neighbor"` |
 | `shortlist_size` | Coarse filter size for candidate ranking | 50 |
 | `seed_position` | Starting pixel | `"random"` |

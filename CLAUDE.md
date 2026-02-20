@@ -15,16 +15,6 @@ Now knock down the wall and scatter the TVs. Can you figure out where each TV be
 
 The key insight: **neighboring pixels in a video tend to have similar color sequences over time.** If the video has rich color variety (not just black/white blinking), TVs that belong next to each other will have correlated color histories. This correlation is what we exploit to solve the puzzle.
 
-### Neuroscience Inspiration
-
-This project is inspired by neural plasticity research:
-
-- **Ferret rewiring experiments**: When scientists rewired ferrets' optic nerves to the auditory cortex (and vice versa), the animals still learned to see. This shows that "pixel positions" in the visual field are *learned*, not hardcoded.
-
-- **Topological organization**: In the brain, neurons that respond to adjacent body parts are physically adjacent (somatotopy). If you tap your index finger, then your ring finger, the neural region responding to your middle finger will be *between* them. This topological tendency is preserved even after nerve rewiring.
-
-The unscramble problem is analogous: we're trying to recover spatial topology from temporal correlation alone.
-
 ## Tech Stack
 
 - **Language:** Python
@@ -48,6 +38,8 @@ unscramble_video/
 ├── metric_comparison_gui.py            # Side-by-side metric comparison (Flattened Euclidean, Summed Color, Mahalanobis)
 ├── generate_stimulus.py               # Synthetic stimulus video generator (floating colored balls)
 ├── generate_flow_stimulus.py          # Procedural flow-field stimulus generator (animated noise + waves)
+├── pinwheel_solver_gui.py             # Pinwheel tiling solver (concentric ring BFS, PyQt5)
+├── pinwheel_experiment.py             # Pinwheel vs Greedy experiment — compare reconstruction methods
 ├── common_edges.py                    # Persistent edge detection across frames
 ├── compare_metrics.py                 # CLI tool comparing 4 metrics + shuffled vs correct distributions + overlap analysis
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
@@ -71,6 +63,11 @@ python neighbor_dissonance_gui.py    # Visualize dissonance heatmaps
 python greedy_solver_gui_pyqt.py     # Run solver with animation (PyQt5, pink theme)
 python metric_comparison_gui.py      # Compare Flattened Euclidean vs Summed Color vs Mahalanobis
 python bfs_solver.py -v video.mkv -f 100  # BFS jigsaw solver with pygame GUI
+python pinwheel_solver_gui.py -v video.mkv -f 100 --scramble-seed 42  # Pinwheel tiling solver
+
+# Pinwheel experiment — compare reconstruction methods against ground truth
+python pinwheel_experiment.py -v video.mkv --method pinwheel --radius 5
+python pinwheel_experiment.py -v video.mkv --method greedy --radius 5 --shortlist 50
 
 # Run CLI experiment
 python experiment_neighbor_dissonance.py -v video.mkv -n 20 -f 100
@@ -101,7 +98,6 @@ python generate_flow_stimulus.py --noise-scale 5 --num-octaves 8 --flow-strength
 - **TVWall**: Class representing the wall of TVs; handles video loading, position swapping, dissonance computation, and frame/video export
 - **Neighbor Dissonance**: For each position, the average distance to its 8 neighbors. High dissonance = likely misplaced
 - **Pipeline**: Video → frames → TVs → UMAP embedding → RGB visualization → animation
-- **DTW (Dynamic Time Warping)**: Distance metric that accounts for time-shifts between sequences
 - **Summed Squared Color Distance**: Sum of per-frame squared Euclidean color distances — `Σ_t (ΔR² + ΔG² + ΔB²)`. Uses the `'squared'` distance metric internally.
 - **Mahalanobis Distance**: Per-frame distance weighted by the inverse covariance of the reference pixel's color channels. Accounts for R/G/B correlations so correlated channel deviations are penalized less than independent ones. Computed as `Σ_t √(Δcᵀ Σ⁻¹ Δc)` where `Σ` is the 3×3 channel covariance of the clicked pixel.
 - **Stride**: Frame skip interval for capturing longer-term temporal patterns
@@ -129,37 +125,6 @@ wall = TVWall("video.mkv", num_frames=100, min_entropy=3.0)
 # Check entropy of a single frame
 entropy = compute_color_entropy(frame)  # frame is (H, W, 3) uint8
 ```
-
-## DTW Pairwise Distance
-
-Use `aeon.distances.dtw_pairwise_distance` to compute DTW distances between TV color series:
-
-```python
-from aeon.distances import dtw_pairwise_distance
-import numpy as np
-
-# Get color series for multiple TVs - shape: (n_tvs, n_channels, n_frames)
-tv_series = np.array([
-    wall.get_tv_color_series(x1, y1).T,  # shape: (3, n_frames)
-    wall.get_tv_color_series(x2, y2).T,
-    wall.get_tv_color_series(x3, y3).T,
-])
-
-# Compute pairwise DTW distance matrix - shape: (n_tvs, n_tvs)
-distances = dtw_pairwise_distance(tv_series)
-
-# With Sakoe-Chiba band constraint (faster, limits warping)
-distances = dtw_pairwise_distance(tv_series, window=0.1)
-
-# Parallel computation
-distances = dtw_pairwise_distance(tv_series, n_jobs=-1)
-```
-
-**Parameters:**
-- `X`: Array of shape `(n_cases, n_channels, n_timepoints)` for multivariate series
-- `y`: Optional second collection to compare against
-- `window`: Sakoe-Chiba band as fraction of series length (0.0-1.0)
-- `n_jobs`: Parallel jobs (-1 for all cores)
 
 ## TVWall Class
 
@@ -512,6 +477,41 @@ stats = solver.get_stats()
 #  'elapsed_time', 'placements_per_sec'}
 ```
 
+## Pinwheel Experiment (`pinwheel_experiment.py`)
+
+Compares a circular patch reconstruction against the ground truth from the original video. Supports two construction methods:
+
+### Methods
+
+- **`pinwheel`** (default): Ranks pixels by distance to center, assigns them to concentric rings matching the integer lattice, TSP-orders each ring, then optimises ring rotations to minimise dissonance with inner rings. Uses coarse frames for candidate selection and fine frames for TSP/rotation/dissonance.
+
+- **`greedy`**: BFS-style expansion from the center pixel outward. Maintains a frontier of empty patch positions adjacent to already-placed positions, prioritised by number of placed neighbours. At each step, finds the best unplaced pixel by flattened Euclidean distance to the mean of placed neighbours (two-stage: mean-RGB shortlist then full time-series).
+
+### CLI Usage
+
+```bash
+# Pinwheel method (default)
+python pinwheel_experiment.py -v video.mkv --method pinwheel --radius 5 \
+    --coarse-frames 100 --fine-frames 500
+
+# Greedy BFS expansion
+python pinwheel_experiment.py -v video.mkv --method greedy --radius 5 \
+    --fine-frames 500 --shortlist 50
+
+# Key parameters:
+#   --method           pinwheel or greedy
+#   --radius           Patch radius in lattice rings (default: 5)
+#   --coarse-frames    Frames for pinwheel candidate selection (default: 100)
+#   --fine-frames      Frames for TSP/rotation/dissonance/greedy (default: 500)
+#   --shortlist        Greedy method: candidates per BFS step (default: 50)
+#   --scramble-seed    Random seed for scrambling (default: 42)
+#   --center-x/y       Center position (default: grid center)
+```
+
+### GUI
+
+Displays ground truth (left) and reconstruction (right) side by side with a frame slider. Shows dissonance comparison, accuracy, and frame info.
+
 ## CLI Experiment (`experiment_neighbor_dissonance.py`)
 
 Command-line tool for systematic evaluation:
@@ -638,14 +638,3 @@ python generate_flow_stimulus.py --preset hard --seed 42    # Fine texture, fast
 
 The ball stimulus creates similar R/G/B correlations at most pixels (all three channels track the same gradient). The flow stimulus creates **spatially-varying covariance** — at some pixels R and G are correlated while B is anti-correlated; at others the pattern reverses. This is the regime where Mahalanobis distance outperforms Euclidean, because it weights each channel pair by its local covariance structure.
 
-## Ideas
-
-- **Scramble threshold experiment**: Start with correct video, randomize N positions, solve, then increase N until the solver breaks down. Find the critical threshold.
-
-- **Distance metric comparison**: Compare Euclidean vs DTW correlation with actual TV distance to validate DTW as the better metric.
-
-- **A* search**: Use neighbor dissonance as a heuristic cost function to prune the combinatorial search space of possible swaps.
-
-- **Hierarchical solving**: Solve at low resolution first (pooled pixels), then refine at higher resolution.
-
-- **Subsampled reconstruction**: When sampling a fraction of pixel positions rather than the full grid, the target arrangement should preserve the original aspect ratio. For a video with W×H dimensions and sampling ratio R, arrange TVs in a grid of (W√R) × (H√R). Example: sampling 25% of a 100×200 video → arrange as 50×100.

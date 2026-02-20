@@ -1,4 +1,4 @@
-# Ideas
+# Ideas and Resources
 
 This document contains some relevant thoughts and resources to the Video Unscrambling Problem.
 
@@ -12,7 +12,10 @@ This document contains some relevant thoughts and resources to the Video Unscram
 </figure>
 
 
+## Ideas
 
+- Use normalization before taking distance so that it considers each channel equally if the distribution of the colors is different. Compare non-normalized result to normalized result in the compare_metrics_gui. Maybe this will have a similar result to Mahalanobis distance? This may help especially since for example in the train footage you a high concentration in the green channel?
+- When constructing pinwheels, use a greater number of frames, and make sure that there is high entropy in the frames that you sample. It should also be normalized maybe just for those specific selected pixels to construct the pinwheel so that it becomes more sensitive to the other channels?
 
 ## Interesting and relevant resources:
 
