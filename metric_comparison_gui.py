@@ -316,6 +316,16 @@ class MetricComparisonGUI(QMainWindow):
         plot_btn.clicked.connect(self._plot_avg_distance)
         topn_layout.addWidget(plot_btn)
 
+        topn_layout.addWidget(QLabel("Samples:"))
+        self.random_samples_spin = QSpinBox()
+        self.random_samples_spin.setRange(1, 10000)
+        self.random_samples_spin.setValue(50)
+        topn_layout.addWidget(self.random_samples_spin)
+
+        plot_random_btn = QPushButton("Plot Random Avg")
+        plot_random_btn.clicked.connect(self._plot_avg_distance_random)
+        topn_layout.addWidget(plot_random_btn)
+
         save_btn = QPushButton("Save PNG")
         save_btn.clicked.connect(self._save_figure)
         topn_layout.addWidget(save_btn)
@@ -997,6 +1007,127 @@ class MetricComparisonGUI(QMainWindow):
         plt.show()
 
         self.info_label.setText("Plot shown.")
+
+    # -----------------------------------------------------------------------
+    # Random-sampled average plot
+    # -----------------------------------------------------------------------
+
+    def _compute_distances_for_pixel(self, px, py):
+        """Compute (flat_dists, color_dists, mahal_dists) arrays for a pixel.
+
+        Each is an (H, W) float32 array of distances from (px, py) to every
+        other pixel using the three metrics.
+        """
+        H, W, C, T = self.all_series.shape
+        clicked_series = self.all_series[py, px]  # (3, T)
+
+        diff = self.all_series - clicked_series[np.newaxis, np.newaxis, :, :]
+        sq_diff = diff ** 2
+
+        # Flattened Euclidean
+        flat_dists = np.sqrt(np.sum(sq_diff, axis=(2, 3)))
+
+        # Summed Color Distance
+        per_frame_sq = np.sum(sq_diff, axis=2)  # (H, W, T)
+        color_dists = np.sum(np.sqrt(per_frame_sq), axis=2)
+
+        del diff, sq_diff, per_frame_sq
+
+        # Mahalanobis
+        clicked_colors = clicked_series.T  # (T, 3)
+        cov = np.cov(clicked_colors, rowvar=False)  # (3, 3)
+        cov += np.eye(C) * 1e-6
+        cov_inv = np.linalg.inv(cov)
+
+        all_diff = self.all_series - clicked_series[np.newaxis, np.newaxis, :, :]
+        all_diff_flat = all_diff.transpose(0, 1, 3, 2).reshape(-1, C)
+        transformed = all_diff_flat @ cov_inv
+        mahal_sq_flat = np.sum(transformed * all_diff_flat, axis=1)
+        mahal_sq = mahal_sq_flat.reshape(H, W, T)
+        mahal_dists = np.sum(np.sqrt(np.maximum(mahal_sq, 0.0)), axis=2)
+
+        del all_diff, all_diff_flat, transformed, mahal_sq_flat, mahal_sq
+
+        return flat_dists, color_dists, mahal_dists
+
+    def _plot_avg_distance_random(self):
+        if self.all_series is None:
+            QMessageBox.warning(self, "Warning", "Load a video first.")
+            return
+
+        n_samples = self.random_samples_spin.value()
+        H, W = self.all_series.shape[:2]
+        max_n = 10000
+
+        rng = np.random.default_rng()
+        # Sample random (x, y) positions
+        sample_xs = rng.integers(0, W, size=n_samples)
+        sample_ys = rng.integers(0, H, size=n_samples)
+
+        # Accumulators for the three metrics × two curve types
+        flat_avg_accum = np.zeros(max_n, dtype=np.float64)
+        color_avg_accum = np.zeros(max_n, dtype=np.float64)
+        mahal_avg_accum = np.zeros(max_n, dtype=np.float64)
+        flat_sph_accum = np.zeros(max_n, dtype=np.float64)
+        color_sph_accum = np.zeros(max_n, dtype=np.float64)
+        mahal_sph_accum = np.zeros(max_n, dtype=np.float64)
+
+        for i in range(n_samples):
+            px, py = int(sample_xs[i]), int(sample_ys[i])
+            self.info_label.setText(
+                f"Random avg plot: computing pixel ({px}, {py}) "
+                f"[{i + 1}/{n_samples}]…"
+            )
+            QApplication.processEvents()
+
+            flat_d, color_d, mahal_d = self._compute_distances_for_pixel(px, py)
+
+            # Temporarily set clicked_pixel for the cumulative helpers
+            saved_pixel = self.clicked_pixel
+            self.clicked_pixel = (px, py)
+
+            flat_avg_accum += self._cumulative_avg_spatial_dist(flat_d)[:max_n]
+            color_avg_accum += self._cumulative_avg_spatial_dist(color_d)[:max_n]
+            mahal_avg_accum += self._cumulative_avg_spatial_dist(mahal_d)[:max_n]
+            flat_sph_accum += self._cumulative_circle_sphericity(flat_d)[:max_n]
+            color_sph_accum += self._cumulative_circle_sphericity(color_d)[:max_n]
+            mahal_sph_accum += self._cumulative_circle_sphericity(mahal_d)[:max_n]
+
+            self.clicked_pixel = saved_pixel
+
+        # Average
+        flat_avg_accum /= n_samples
+        color_avg_accum /= n_samples
+        mahal_avg_accum /= n_samples
+        flat_sph_accum /= n_samples
+        color_sph_accum /= n_samples
+        mahal_sph_accum /= n_samples
+
+        ns = np.arange(1, max_n + 1)
+
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 9), sharex=True)
+
+        ax1.plot(ns, flat_avg_accum, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
+        ax1.plot(ns, color_avg_accum, label="Summed Color Distance", color="#8b4563", linewidth=1.5)
+        ax1.plot(ns, mahal_avg_accum, label="Mahalanobis", color="#2e86de", linewidth=1.5)
+        ax1.set_ylabel("Avg Spatial Distance (px)")
+        ax1.set_title(f"Avg over {n_samples} random pixels — Metric Comparison")
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+
+        ax2.plot(ns, flat_sph_accum, label="Flattened Euclidean", color="#ff85a2", linewidth=1.5)
+        ax2.plot(ns, color_sph_accum, label="Summed Color Distance", color="#8b4563", linewidth=1.5)
+        ax2.plot(ns, mahal_sph_accum, label="Mahalanobis", color="#2e86de", linewidth=1.5)
+        ax2.set_xlabel("Top-N")
+        ax2.set_ylabel("Sphericity")
+        ax2.set_title("Sphericity = sqrt(compactness x fill rate) x 100")
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+
+        fig.tight_layout()
+        plt.show()
+
+        self.info_label.setText(f"Random avg plot shown ({n_samples} samples).")
 
     # -----------------------------------------------------------------------
     # Save
