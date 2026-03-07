@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QLabel, QPushButton,
     QHBoxLayout, QVBoxLayout, QSpinBox, QLineEdit, QSlider,
-    QFileDialog, QMessageBox, QGroupBox, QSizePolicy
+    QFileDialog, QMessageBox, QGroupBox, QSizePolicy, QCheckBox
 )
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
@@ -280,6 +280,21 @@ class MetricComparisonGUI(QMainWindow):
         self.stride_spin.setValue(100)
         ctrl_layout.addWidget(self.stride_spin)
 
+        self.skip_bw_check = QCheckBox("Skip B/W frames")
+        self.skip_bw_check.setToolTip(
+            "Skip frames containing any near-black or near-white pixels"
+        )
+        ctrl_layout.addWidget(self.skip_bw_check)
+
+        ctrl_layout.addWidget(QLabel("Threshold:"))
+        self.bw_threshold_spin = QSpinBox()
+        self.bw_threshold_spin.setRange(0, 127)
+        self.bw_threshold_spin.setValue(0)
+        self.bw_threshold_spin.setToolTip(
+            "Black = all channels ≤ threshold, White = all channels ≥ 255−threshold"
+        )
+        ctrl_layout.addWidget(self.bw_threshold_spin)
+
         load_btn = QPushButton("Load Video")
         load_btn.clicked.connect(self._load_video)
         ctrl_layout.addWidget(load_btn)
@@ -451,6 +466,8 @@ class MetricComparisonGUI(QMainWindow):
             path,
             num_frames=self.frames_spin.value(),
             stride=self.stride_spin.value(),
+            skip_pure_bw=self.skip_bw_check.isChecked(),
+            bw_threshold=self.bw_threshold_spin.value(),
         )
         self.all_series = self.wall.get_all_series(force_cpu=True)  # (H, W, 3, T)
         self.base_frame_image = self.wall.get_frame_image(0)

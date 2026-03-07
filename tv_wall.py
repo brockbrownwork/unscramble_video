@@ -71,7 +71,7 @@ class TVWall:
     """
 
     def __init__(self, video_path, num_frames=None, start_frame=0, stride=1, crop_percent=100,
-                 use_gpu=True, min_entropy=0.0):
+                 use_gpu=True, min_entropy=0.0, skip_pure_bw=False, bw_threshold=0):
         """
         Initialize a TVWall from a video file.
 
@@ -87,12 +87,19 @@ class TVWall:
                                  Frames with entropy below this are skipped. Useful values:
                                  0 = no filtering, 2-3 = skip very uniform frames,
                                  4+ = only keep frames with moderate color variety.
+            skip_pure_bw (bool): If True, skip frames containing any near-black or near-white
+                                 pixels (default: False).
+            bw_threshold (int): Pixel value threshold for black/white detection (default: 0).
+                                A pixel is "black" if all channels <= bw_threshold,
+                                "white" if all channels >= 255 - bw_threshold.
         """
         self.video_path = video_path
         self.start_frame = start_frame
         self.stride = stride
         self.crop_percent = max(1, min(100, crop_percent))
         self.min_entropy = min_entropy
+        self.skip_pure_bw = skip_pure_bw
+        self.bw_threshold = bw_threshold
 
         self._load_video(num_frames)
         self._apply_crop()
@@ -128,13 +135,23 @@ class TVWall:
 
         frames = []
         skipped_count = 0
+        skipped_entropy = 0
+        skipped_bw = 0
         frame_entropies = []  # Track entropies for reporting
 
         # If filtering by entropy, we may need to scan more frames to get num_frames accepted
         max_frame_idx = total_frames
         current_frame_idx = self.start_frame
 
-        desc = "Loading video frames" if self.min_entropy == 0 else f"Loading frames (entropy >= {self.min_entropy:.1f})"
+        filtering = self.min_entropy > 0 or self.skip_pure_bw
+        desc = "Loading video frames"
+        if filtering:
+            parts = []
+            if self.min_entropy > 0:
+                parts.append(f"entropy >= {self.min_entropy:.1f}")
+            if self.skip_pure_bw:
+                parts.append(f"no B/W <= {self.bw_threshold}")
+            desc = f"Loading frames ({', '.join(parts)})"
 
         with tqdm(total=num_frames, desc=desc) as pbar:
             while len(frames) < num_frames and current_frame_idx < max_frame_idx:
@@ -154,6 +171,17 @@ class TVWall:
 
                     if entropy < self.min_entropy:
                         skipped_count += 1
+                        skipped_entropy += 1
+                        current_frame_idx += self.stride
+                        continue
+
+                # Check for near-black or near-white pixels
+                if self.skip_pure_bw:
+                    has_black = np.any(np.all(frame <= self.bw_threshold, axis=2))
+                    has_white = np.any(np.all(frame >= 255 - self.bw_threshold, axis=2))
+                    if has_black or has_white:
+                        skipped_count += 1
+                        skipped_bw += 1
                         current_frame_idx += self.stride
                         continue
 
@@ -165,15 +193,20 @@ class TVWall:
 
         if skipped_count > 0:
             total_considered = len(frames) + skipped_count
-            print(f"Entropy filter: kept {len(frames)}/{total_considered} frames "
-                  f"(skipped {skipped_count} with entropy < {self.min_entropy:.1f})")
+            parts = []
+            if skipped_entropy > 0:
+                parts.append(f"{skipped_entropy} low-entropy")
+            if skipped_bw > 0:
+                parts.append(f"{skipped_bw} with B/W pixels (threshold={self.bw_threshold})")
+            print(f"Frame filter: kept {len(frames)}/{total_considered} frames "
+                  f"(skipped: {', '.join(parts)})")
             if frame_entropies:
                 print(f"Entropy range: {min(frame_entropies):.2f} - {max(frame_entropies):.2f}, "
                       f"mean: {np.mean(frame_entropies):.2f}")
 
         if len(frames) == 0:
-            raise ValueError(f"No frames passed the entropy filter (min_entropy={self.min_entropy}). "
-                             "Try lowering the threshold.")
+            raise ValueError("No frames passed the filters. "
+                             "Try lowering the entropy threshold or disabling B/W filtering.")
 
         self._frames = np.array(frames)
         self.num_frames = len(frames)

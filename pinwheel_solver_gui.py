@@ -312,9 +312,10 @@ class Pinwheel:
     # ── Rotation optimisation ───────────────────────────────────────
 
     def _optimise_rotations(self, placed_series_at=None, step_callback=None):
-        """Try every discrete rotation for each ring (from inside out) and
-        keep the rotation that minimises total dissonance with already-placed
-        inner rings and pinboard neighbours."""
+        """Try every discrete rotation for each ring (from inside out),
+        both in original and horizontally-flipped (reversed) order, and
+        keep the combination that minimises total dissonance with
+        already-placed inner rings and pinboard neighbours."""
         gx0, gy0 = self.center_pos
         total_rings = len(self._lattice_rings)
 
@@ -337,34 +338,45 @@ class Pinwheel:
 
             best_rot = 0
             best_cost = float('inf')
+            best_flip = False
 
-            for rot in range(n):
-                cost = 0.0
-                count = 0
-                for i, pix_idx in enumerate(pixels):
-                    slot = (i + rot) % n
-                    dx, dy = offsets[slot]
-                    gx, gy = gx0 + dx, gy0 + dy
-                    pix_series = self._series_flat[pix_idx]
+            # Try both original and flipped (reversed) pixel orderings
+            candidates = [pixels, pixels[::-1]]
 
-                    # Check 4 cardinal neighbours in *placed*
-                    for ndx, ndy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                        npos = (gx + ndx, gy + ndy)
-                        if npos in placed:
-                            diff = pix_series - placed[npos]
-                            cost += float(np.sqrt(np.sum(diff ** 2)))
-                            count += 1
+            for flip_idx, candidate_pixels in enumerate(candidates):
+                for rot in range(n):
+                    cost = 0.0
+                    count = 0
+                    for i, pix_idx in enumerate(candidate_pixels):
+                        slot = (i + rot) % n
+                        dx, dy = offsets[slot]
+                        gx, gy = gx0 + dx, gy0 + dy
+                        pix_series = self._series_flat[pix_idx]
 
-                if count > 0:
-                    cost /= count
-                if cost < best_cost:
-                    best_cost = cost
-                    best_rot = rot
+                        # Check 4 cardinal neighbours in *placed*
+                        for ndx, ndy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                            npos = (gx + ndx, gy + ndy)
+                            if npos in placed:
+                                diff = pix_series - placed[npos]
+                                cost += float(np.sqrt(np.sum(diff ** 2)))
+                                count += 1
+
+                    if count > 0:
+                        cost /= count
+                    if cost < best_cost:
+                        best_cost = cost
+                        best_rot = rot
+                        best_flip = (flip_idx == 1)
+
+            # Apply flip if the reversed order was better
+            if best_flip:
+                self.rings[ring_idx] = pixels[::-1]
 
             self.ring_rotations[ring_idx] = best_rot
 
             # Register this ring in placed for outer rings to reference
-            for i, pix_idx in enumerate(pixels):
+            final_pixels = self.rings[ring_idx]
+            for i, pix_idx in enumerate(final_pixels):
                 slot = (i + best_rot) % n
                 dx, dy = offsets[slot]
                 gx, gy = gx0 + dx, gy0 + dy
@@ -381,6 +393,7 @@ class Pinwheel:
                     'ring_offsets': [list(r) for r in self.ring_offsets],
                     'ring_rotations': list(self.ring_rotations),
                     'best_rot': best_rot,
+                    'best_flip': best_flip,
                 }
                 step_callback(state)
 
