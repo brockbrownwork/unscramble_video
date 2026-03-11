@@ -5,6 +5,7 @@ umap-learn
 matplotlib
 Pillow
 scipy
+h5py
 aeon
 scikit-learn
 cupy-cuda13x

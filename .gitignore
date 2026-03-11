@@ -1,6 +1,7 @@
 *.pdf
 *.pyc
 *.npy
+*.h5
 *.gif
 *.7z
 __pycache__/

@@ -18,7 +18,7 @@ The key insight: **neighboring pixels in a video tend to have similar color sequ
 ## Tech Stack
 
 - **Language:** Python
-- **Core Libraries:** opencv-python, numpy, umap-learn, matplotlib, Pillow, tqdm, scipy
+- **Core Libraries:** opencv-python, numpy, umap-learn, matplotlib, Pillow, tqdm, scipy, h5py
 - **GPU Acceleration:** cupy (optional, for fast dissonance computation)
 - **Distance Metrics:** aeon (DTW pairwise distances)
 - **ML/Evaluation:** scikit-learn (precision-recall, ROC curves)
@@ -44,8 +44,11 @@ unscramble_video/
 ├── compare_metrics.py                 # CLI tool comparing 4 metrics + shuffled vs correct distributions + overlap analysis
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
 ├── benchmark_gpu.py                   # GPU vs CPU performance benchmarking
+├── video_to_hdf5.py                   # Convert video to HDF5 dataset (T, C, H, W)
+├── hdf5_viewer_gui.py                 # HDF5 frame viewer + pixel time-series speed test (PyQt5)
 ├── *.ipynb                            # Experimental notebooks
 ├── *.mkv                              # Input video files
+├── *.h5                               # HDF5 video datasets
 ├── *.gif                              # Output animations
 └── *.npy                              # Cached numpy arrays
 ```
@@ -90,6 +93,12 @@ python generate_stimulus.py -o stimulus.mkv --frames 10000 --spawn-rate 3.0 --de
 python generate_flow_stimulus.py -o flow_stimulus.mkv --frames 10000 --seed 42
 python generate_flow_stimulus.py --preset hard --seed 42
 python generate_flow_stimulus.py --noise-scale 5 --num-octaves 8 --flow-strength 0.5
+
+# Convert video to HDF5 (extracts all frames via ffmpeg, writes in batches, deletes BMPs as it goes)
+python video_to_hdf5.py cab_ride_trimmed.mkv --output videos.h5 --dataset "videos/cab_ride_trimmed"
+
+# View HDF5 frames + test pixel time-series read speed
+python hdf5_viewer_gui.py videos.h5 --dataset "videos/cab_ride_trimmed"
 ```
 
 ## Key Concepts
@@ -102,6 +111,61 @@ python generate_flow_stimulus.py --noise-scale 5 --num-octaves 8 --flow-strength
 - **Mahalanobis Distance**: Per-frame distance weighted by the inverse covariance of the reference pixel's color channels. Accounts for R/G/B correlations so correlated channel deviations are penalized less than independent ones. Computed as `Σ_t √(Δcᵀ Σ⁻¹ Δc)` where `Σ` is the 3×3 channel covariance of the clicked pixel.
 - **Stride**: Frame skip interval for capturing longer-term temporal patterns
 - **Color Entropy**: Shannon entropy of the color distribution in a frame. Used to filter out low-information frames (e.g., solid colors, fades to black).
+
+## HDF5 Video Storage
+
+Videos are stored as HDF5 datasets for fast numpy-style slicing, especially pixel time-series access.
+
+### File: `videos.h5`
+
+| Dataset | Shape | Dtype | Chunks | Source |
+|---------|-------|-------|--------|--------|
+| `videos/cab_ride_trimmed` | `(15196, 3, 720, 1280)` | `uint8` | `(1000, 3, 8, 8)` | `cab_ride_trimmed.mkv` (60fps, all frames) |
+| `videos/cab_ride_trimmed_1fps` | `(255, 3, 720, 1280)` | `uint8` | `(1, 3, 720, 1280)` | `cab_ride_trimmed.mkv` (1fps, ~253s) |
+
+### Layout: `(T, C, H, W)`
+
+- **T** — timestep (frame index)
+- **C** — color channel (RGB, 3)
+- **H** — height (pixels)
+- **W** — width (pixels)
+
+### Chunking Strategies
+
+- **`cab_ride_trimmed`**: Chunks `(1000, 3, 8, 8)` — large along T, small spatially. Optimized for pixel time-series access (`dataset[:, :, y, x]`). Batch writes are aligned to the chunk temporal size to avoid read-modify-write thrashing.
+- **`cab_ride_trimmed_1fps`**: Chunks `(1, 3, 720, 1280)` — one full frame per chunk (~2.8 MB). Optimized for whole-frame access (`dataset[t]`) and strided slicing (`dataset[::stride]`).
+
+No compression — raw uint8 for fastest read performance.
+
+### Access Patterns
+
+```python
+import h5py
+
+f = h5py.File("videos.h5", "r")
+ds = f["videos/cab_ride_trimmed"]
+
+# Pixel time-series (fast — ~35ms, reads ~16 chunks)
+pixel_ts = ds[:, :, y, x]        # shape: (15196, 3)
+
+# Single frame (slower — reads many spatial chunks)
+frame = ds[t]                     # shape: (3, 720, 1280)
+
+# Frame batch
+batch = ds[100:200]               # shape: (100, 3, 720, 1280)
+```
+
+### Ingestion Tool: `video_to_hdf5.py`
+
+Extracts all frames via ffmpeg as BMPs, loads in batches of 1000, writes to HDF5, and deletes BMPs as it goes.
+
+```bash
+python video_to_hdf5.py video.mkv --output videos.h5 --dataset "videos/video_name"
+```
+
+### Viewer GUI: `hdf5_viewer_gui.py`
+
+PyQt5 viewer for browsing frames and benchmarking pixel time-series read speed. Scrub frames with a slider, click any pixel to read its full time-series and see timing, or benchmark 100 random pixel reads.
 
 ## Color Entropy Filtering
 

@@ -14,6 +14,9 @@ This document contains some relevant thoughts and resources to the Video Unscram
 
 ## Ideas
 
+- Use HDF5 to store the video as a Numpy array, then do slicing instead of keeping a bunch of separate image files!
+  - …Then after you've grabbed the top 1000 top similar pixels, use higher framerates (lower stride) to get finer grain information, repeat the process over and over (why didn't I think of this earlier?????)
+
 - Use motion ghosting to improve the neighbor dissonance metrics
   - Use the original metric to determine general neighborhood, then scrub through motion ghosting for instances of movement. Use instances where motion is available and color of the motion streak is relatively uniform without being *too* uniform.
 - Use normalization before taking distance so that it considers each channel equally if the distribution of the colors is different. Compare non-normalized result to normalized result in the compare_metrics_gui. Maybe this will have a similar result to Mahalanobis distance? This may help especially since for example in the train footage you a high concentration in the green channel?
