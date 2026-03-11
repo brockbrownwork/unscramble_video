@@ -14,7 +14,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSlider, QLabel, QPushButton, QGroupBox, QSizePolicy,
+    QSlider, QLabel, QPushButton, QGroupBox, QSizePolicy, QSpinBox,
 )
 
 
@@ -60,6 +60,22 @@ QPushButton {
 }
 QPushButton:hover { background-color: #ff6b81; }
 QPushButton:pressed { background-color: #c0392b; }
+QPushButton:disabled { background-color: #555; color: #999; }
+QSpinBox {
+    background-color: #16213e;
+    color: #eee;
+    border: 2px solid #e94560;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 13px;
+    font-weight: bold;
+}
+QSpinBox::up-button, QSpinBox::down-button {
+    background-color: #e94560;
+    border: none;
+    width: 16px;
+}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover { background-color: #ff6b81; }
 """
 
 
@@ -81,7 +97,15 @@ class FrameLabel(QLabel):
         self._pixmap = pixmap
         self._img_w = img_w
         self._img_h = img_h
+        self._click_pos = None
         self._update_display()
+
+    def clear_frame(self):
+        self._pixmap = None
+        self._click_pos = None
+        self._img_w = 0
+        self._img_h = 0
+        super().setPixmap(QPixmap())
 
     def _update_display(self):
         if self._pixmap is None:
@@ -133,7 +157,7 @@ class HDF5ViewerWindow(QMainWindow):
     def __init__(self, hdf5_path, dataset_path):
         super().__init__()
         self.setWindowTitle("HDF5 Video Viewer")
-        self.setMinimumSize(900, 620)
+        self.setMinimumSize(900, 680)
         self.setStyleSheet(PINK_STYLE)
 
         self.h5file = h5py.File(hdf5_path, "r")
@@ -141,9 +165,14 @@ class HDF5ViewerWindow(QMainWindow):
         self.T, self.C, self.H, self.W = self.dataset.shape
         self.current_frame = 0
         self.selected_pixel = None
+        # Track the crop region of the currently displayed frame
+        self._crop_x0 = 0
+        self._crop_y0 = 0
+        self._crop_w = self.W
+        self._crop_h = self.H
+        self._frame_loaded = False
 
         self._build_ui()
-        self._show_frame(0)
 
     def _build_ui(self):
         central = QWidget()
@@ -175,15 +204,43 @@ class HDF5ViewerWindow(QMainWindow):
         slider_row = QHBoxLayout()
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(0, self.T - 1)
-        self.slider.valueChanged.connect(self._on_slider)
         slider_row.addWidget(self.slider, 1)
 
-        self.frame_num_label = QLabel("0 / 0")
+        self.frame_num_label = QLabel(f"0 / {self.T - 1}")
         self.frame_num_label.setFixedWidth(140)
         self.frame_num_label.setAlignment(Qt.AlignCenter)
+        self.slider.valueChanged.connect(
+            lambda v: self.frame_num_label.setText(f"{v} / {self.T - 1}")
+        )
         slider_row.addWidget(self.frame_num_label)
 
         frame_layout.addLayout(slider_row)
+
+        # Load frame controls
+        load_row = QHBoxLayout()
+
+        self.crop_label = QLabel("Center crop:")
+        load_row.addWidget(self.crop_label)
+
+        self.crop_spin = QSpinBox()
+        self.crop_spin.setRange(1, 100)
+        self.crop_spin.setValue(100)
+        self.crop_spin.setSuffix("%")
+        self.crop_spin.setFixedWidth(80)
+        self.crop_spin.valueChanged.connect(self._on_crop_changed)
+        load_row.addWidget(self.crop_spin)
+
+        self.crop_size_label = QLabel(f"({self.W} x {self.H})")
+        self.crop_size_label.setFixedWidth(140)
+        load_row.addWidget(self.crop_size_label)
+
+        load_row.addStretch()
+
+        self.load_btn = QPushButton("Load Frame")
+        self.load_btn.clicked.connect(self._on_load_frame)
+        load_row.addWidget(self.load_btn)
+
+        frame_layout.addLayout(load_row)
 
         # Frame read time
         self.frame_time_label = QLabel("Frame read: —")
@@ -205,7 +262,7 @@ class HDF5ViewerWindow(QMainWindow):
 
         # Benchmark button
         btn_row = QHBoxLayout()
-        self.bench_btn = QPushButton("Benchmark 100 random pixels")
+        self.bench_btn = QPushButton("Benchmark 1000 random pixels")
         self.bench_btn.clicked.connect(self._run_benchmark)
         btn_row.addStretch()
         btn_row.addWidget(self.bench_btn)
@@ -218,29 +275,56 @@ class HDF5ViewerWindow(QMainWindow):
 
         layout.addWidget(pixel_box)
 
-    def _show_frame(self, idx):
+    def _get_crop_region(self):
+        """Return (x0, y0, crop_w, crop_h) for the current crop percentage."""
+        pct = self.crop_spin.value() / 100.0
+        crop_w = max(1, int(self.W * pct))
+        crop_h = max(1, int(self.H * pct))
+        x0 = (self.W - crop_w) // 2
+        y0 = (self.H - crop_h) // 2
+        return x0, y0, crop_w, crop_h
+
+    def _on_crop_changed(self, value):
+        x0, y0, crop_w, crop_h = self._get_crop_region()
+        self.crop_size_label.setText(f"({crop_w} x {crop_h})")
+
+    def _on_load_frame(self):
+        idx = self.slider.value()
         self.current_frame = idx
+        x0, y0, crop_w, crop_h = self._get_crop_region()
+        self._crop_x0 = x0
+        self._crop_y0 = y0
+        self._crop_w = crop_w
+        self._crop_h = crop_h
+
         t0 = time.perf_counter()
-        frame = self.dataset[idx]  # (C, H, W)
+        frame = self.dataset[idx, :, y0:y0 + crop_h, x0:x0 + crop_w]  # (C, crop_h, crop_w)
         t1 = time.perf_counter()
 
         # C, H, W -> H, W, C for display
         rgb = frame.transpose(1, 2, 0).copy()
-        qimg = QImage(rgb.data, self.W, self.H, 3 * self.W, QImage.Format_RGB888)
+        qimg = QImage(rgb.data, crop_w, crop_h, 3 * crop_w, QImage.Format_RGB888)
         pixmap = QPixmap.fromImage(qimg)
-        self.frame_label.set_frame(pixmap, self.W, self.H)
+        self.frame_label.set_frame(pixmap, crop_w, crop_h)
+        self._frame_loaded = True
 
-        self.frame_num_label.setText(f"{idx} / {self.T - 1}")
-        self.frame_time_label.setText(f"Frame read: {(t1 - t0) * 1000:.1f} ms")
-
-    def _on_slider(self, value):
-        self._show_frame(value)
+        pixels = crop_w * crop_h
+        self.frame_time_label.setText(
+            f"Frame read: {(t1 - t0) * 1000:.1f} ms  |  "
+            f"crop: {crop_w}x{crop_h} ({pixels:,} px)  |  "
+            f"offset: ({x0}, {y0})"
+        )
 
     def _on_pixel_click(self, x, y):
-        self.selected_pixel = (x, y)
+        if not self._frame_loaded:
+            return
+        # Map crop-local coords back to dataset coords
+        ds_x = x + self._crop_x0
+        ds_y = y + self._crop_y0
+        self.selected_pixel = (ds_x, ds_y)
 
         t0 = time.perf_counter()
-        ts = self.dataset[:, :, y, x]  # (T, C)
+        ts = self.dataset[:, :, ds_y, ds_x]  # (T, C)
         t1 = time.perf_counter()
         read_ms = (t1 - t0) * 1000
 
@@ -249,7 +333,7 @@ class HDF5ViewerWindow(QMainWindow):
         std_color = ts.std(axis=0)
 
         self.pixel_info_label.setText(
-            f"Pixel ({x}, {y})  —  time-series read: {read_ms:.1f} ms  "
+            f"Pixel ({ds_x}, {ds_y})  —  time-series read: {read_ms:.1f} ms  "
             f"({self.T} frames × 3 channels = {ts.nbytes / 1024:.1f} KB)"
         )
         self.pixel_stats_label.setText(
@@ -263,9 +347,9 @@ class HDF5ViewerWindow(QMainWindow):
         self.bench_label.setText("Running benchmark...")
         QApplication.processEvents()
 
-        rng = np.random.default_rng(42)
-        xs = rng.integers(0, self.W, 100)
-        ys = rng.integers(0, self.H, 100)
+        rng = np.random.default_rng()
+        xs = rng.integers(0, self.W, 1000)
+        ys = rng.integers(0, self.H, 1000)
 
         times = []
         for x, y in zip(xs, ys):
@@ -276,7 +360,7 @@ class HDF5ViewerWindow(QMainWindow):
 
         times = np.array(times)
         self.bench_label.setText(
-            f"100 random pixel reads:  "
+            f"1000 random pixel reads:  "
             f"mean {times.mean():.1f} ms  |  "
             f"median {np.median(times):.1f} ms  |  "
             f"min {times.min():.1f} ms  |  "
@@ -291,9 +375,9 @@ class HDF5ViewerWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Left:
-            self.slider.setValue(max(0, self.current_frame - 1))
+            self.slider.setValue(max(0, self.slider.value() - 1))
         elif event.key() == Qt.Key_Right:
-            self.slider.setValue(min(self.T - 1, self.current_frame + 1))
+            self.slider.setValue(min(self.T - 1, self.slider.value() + 1))
         elif event.key() == Qt.Key_Home:
             self.slider.setValue(0)
         elif event.key() == Qt.Key_End:

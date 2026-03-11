@@ -45,6 +45,7 @@ unscramble_video/
 ├── experiment_neighbor_dissonance.py  # CLI experiment with ROC/PR curves
 ├── benchmark_gpu.py                   # GPU vs CPU performance benchmarking
 ├── video_to_hdf5.py                   # Convert video to HDF5 dataset (T, C, H, W)
+├── ONESHOT_rechunk_h5.py              # Rechunk HDF5 dataset to (T, 3, 1, 1) for fast pixel access
 ├── hdf5_viewer_gui.py                 # HDF5 frame viewer + pixel time-series speed test (PyQt5)
 ├── *.ipynb                            # Experimental notebooks
 ├── *.mkv                              # Input video files
@@ -99,6 +100,9 @@ python video_to_hdf5.py cab_ride_trimmed.mkv --output videos.h5 --dataset "video
 
 # View HDF5 frames + test pixel time-series read speed
 python hdf5_viewer_gui.py videos.h5 --dataset "videos/cab_ride_trimmed"
+
+# Rechunk HDF5 dataset from (1000, 3, 8, 8) to (T, 3, 1, 1) for fast pixel time-series access
+python ONESHOT_rechunk_h5.py videos.h5 --dataset "videos/cab_ride_trimmed"
 ```
 
 ## Key Concepts
@@ -120,7 +124,7 @@ Videos are stored as HDF5 datasets for fast numpy-style slicing, especially pixe
 
 | Dataset | Shape | Dtype | Chunks | Source |
 |---------|-------|-------|--------|--------|
-| `videos/cab_ride_trimmed` | `(15196, 3, 720, 1280)` | `uint8` | `(1000, 3, 8, 8)` | `cab_ride_trimmed.mkv` (60fps, all frames) |
+| `videos/cab_ride_trimmed` | `(15196, 3, 720, 1280)` | `uint8` | `(15196, 3, 1, 1)` | `cab_ride_trimmed.mkv` (60fps, all frames) |
 | `videos/cab_ride_trimmed_1fps` | `(255, 3, 720, 1280)` | `uint8` | `(1, 3, 720, 1280)` | `cab_ride_trimmed.mkv` (1fps, ~253s) |
 
 ### Layout: `(T, C, H, W)`
@@ -132,7 +136,7 @@ Videos are stored as HDF5 datasets for fast numpy-style slicing, especially pixe
 
 ### Chunking Strategies
 
-- **`cab_ride_trimmed`**: Chunks `(1000, 3, 8, 8)` — large along T, small spatially. Optimized for pixel time-series access (`dataset[:, :, y, x]`). Batch writes are aligned to the chunk temporal size to avoid read-modify-write thrashing.
+- **`cab_ride_trimmed`**: Chunks `(T, 3, 1, 1)` — entire pixel time-series in a single ~45KB chunk. Optimized for pixel time-series access (`dataset[:, :, y, x]`) — one chunk read per pixel, zero waste. Whole-frame reads are slow (921K chunk lookups); use the 1fps dataset or the viewer's center crop for frame browsing.
 - **`cab_ride_trimmed_1fps`**: Chunks `(1, 3, 720, 1280)` — one full frame per chunk (~2.8 MB). Optimized for whole-frame access (`dataset[t]`) and strided slicing (`dataset[::stride]`).
 
 No compression — raw uint8 for fastest read performance.
@@ -145,14 +149,14 @@ import h5py
 f = h5py.File("videos.h5", "r")
 ds = f["videos/cab_ride_trimmed"]
 
-# Pixel time-series (fast — ~35ms, reads ~16 chunks)
+# Pixel time-series (fast — single chunk read with (T,3,1,1) chunking)
 pixel_ts = ds[:, :, y, x]        # shape: (15196, 3)
 
-# Single frame (slower — reads many spatial chunks)
+# Single frame (slow with (T,3,1,1) chunking — use 1fps dataset instead)
 frame = ds[t]                     # shape: (3, 720, 1280)
 
-# Frame batch
-batch = ds[100:200]               # shape: (100, 3, 720, 1280)
+# Center crop of a frame (practical with pixel-optimized chunking)
+frame_crop = ds[t, :, y0:y1, x0:x1]  # reads only (y1-y0)*(x1-x0) chunks
 ```
 
 ### Ingestion Tool: `video_to_hdf5.py`
@@ -163,9 +167,17 @@ Extracts all frames via ffmpeg as BMPs, loads in batches of 1000, writes to HDF5
 python video_to_hdf5.py video.mkv --output videos.h5 --dataset "videos/video_name"
 ```
 
+### Rechunking Tool: `ONESHOT_rechunk_h5.py`
+
+Rechunks an existing dataset from `(1000, 3, 8, 8)` to `(T, 3, 1, 1)` in place. Reads the source in row strips, writes to a temporary dataset with the new chunking, then replaces the original.
+
+```bash
+python ONESHOT_rechunk_h5.py videos.h5 --dataset "videos/cab_ride_trimmed" --row-batch 8
+```
+
 ### Viewer GUI: `hdf5_viewer_gui.py`
 
-PyQt5 viewer for browsing frames and benchmarking pixel time-series read speed. Scrub frames with a slider, click any pixel to read its full time-series and see timing, or benchmark 100 random pixel reads.
+PyQt5 viewer for browsing frames and benchmarking pixel time-series read speed. Frames are not loaded automatically — select a frame with the slider and click **Load Frame**. A **center crop %** control lets you load only the middle portion of the frame, which is practical when the dataset uses pixel-optimized `(T, 3, 1, 1)` chunking (whole-frame reads would be slow). Click any pixel to read its full time-series, or benchmark 1000 random pixel reads.
 
 ## Color Entropy Filtering
 
